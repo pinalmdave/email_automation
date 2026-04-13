@@ -1,0 +1,9 @@
+.env
+__pycache__/
+*.pyc
+processed_emails.json
+followup_state.json
+node_modules/
+frontend/dist/
+frontend/node_modules/
+.claude/
