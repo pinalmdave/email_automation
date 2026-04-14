@@ -49,8 +49,9 @@ def _clean_email_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
     if "from_email" in entry:
         entry["from_email"] = _decode_mime_header(entry["from_email"])
     # Ensure resume_file only contains the filename for the API
+    # Use split on both / and \ so this works on Linux with Windows-style paths
     if entry.get("resume_file"):
-        entry["resume_file"] = Path(entry["resume_file"]).name
+        entry["resume_file"] = entry["resume_file"].replace("\\", "/").rsplit("/", 1)[-1]
     return entry
 
 

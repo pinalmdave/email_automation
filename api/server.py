@@ -11,12 +11,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 from config import WEB_API_PORT
 
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3001,http://127.0.0.1:3001").split(",")
 
-app = FastAPI(title="Claude Smart Email App", version="3.0")
+# redirect_slashes=False prevents 307 redirects from /api/dashboard to /api/dashboard/
+# which cause http:// redirect issues behind Azure's HTTPS proxy
+app = FastAPI(title="Claude Smart Email App", version="3.0", redirect_slashes=False)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in ALLOWED_ORIGINS],
