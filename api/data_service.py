@@ -99,39 +99,22 @@ def get_all_followups() -> List[Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# Resumes
+# Resumes (delegates to blob_storage for Azure/local abstraction)
 # ---------------------------------------------------------------------------
 
 def list_resumes() -> List[Dict[str, Any]]:
     """List all DOCX resume files with metadata."""
-    results = []
-    if not RESUME_OUTPUT_DIR.exists():
-        return results
-    for f in sorted(RESUME_OUTPUT_DIR.glob("*.docx")):
-        stat = f.stat()
-        results.append({
-            "filename": f.name,
-            "size_bytes": stat.st_size,
-            "created_at": datetime.fromtimestamp(stat.st_ctime, tz=timezone.utc).isoformat(),
-        })
-    return results
+    from blob_storage import list_resumes as blob_list_resumes
+    return blob_list_resumes()
 
 
 def get_resume_path(filename: str) -> Optional[Path]:
-    """Return the full path to a resume file, with path traversal protection."""
-    # Prevent path traversal
+    """Return a local file path for a resume (downloads from blob if needed)."""
+    from blob_storage import get_resume_local_path
     safe_name = Path(filename).name
-    if safe_name != filename or ".." in filename or "/" in filename or "\\" in filename:
+    if safe_name != filename or ".." in filename:
         return None
-    path = RESUME_OUTPUT_DIR / safe_name
-    if not path.exists() or not path.is_file():
-        return None
-    # Ensure the resolved path is under RESUME_OUTPUT_DIR
-    try:
-        path.resolve().relative_to(RESUME_OUTPUT_DIR.resolve())
-    except ValueError:
-        return None
-    return path
+    return get_resume_local_path(safe_name)
 
 
 # ---------------------------------------------------------------------------

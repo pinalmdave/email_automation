@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { EmailRecord } from '../api/types';
+import { API_BASE } from '../api/client';
 
 interface EmailTableProps {
   emails: EmailRecord[];
@@ -60,7 +61,7 @@ export default function EmailTable({ emails }: EmailTableProps) {
               <td className="px-4 py-3 text-sm">
                 {email.resume_file ? (
                   <a
-                    href={`/api/resumes/${encodeURIComponent(email.resume_file.split(/[/\\]/).pop() || '')}/download`}
+                    href={`${API_BASE}/api/resumes/${encodeURIComponent(email.resume_file.split(/[/\\]/).pop() || '')}/download`}
                     className="text-indigo-600 hover:text-indigo-800 font-medium"
                     title={email.resume_file}
                   >

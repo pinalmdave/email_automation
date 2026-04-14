@@ -137,8 +137,11 @@ def _resume_json_to_context(data: Dict[str, Any]) -> Dict[str, str]:
 def render_resume_docx(resume_json: Dict[str, Any]) -> Path:
     """
     Render resume JSON into a DOCX file using the template.
-    Saves to both RESUME_OUTPUT_DIR (Desktop) and returns the path.
+    Saves to RESUME_OUTPUT_DIR and uploads to Azure Blob Storage if configured.
+    Returns the local path.
     """
+    from blob_storage import upload_resume
+
     if not RESUME_TEMPLATE_PATH.exists():
         raise FileNotFoundError(f"Resume template not found: {RESUME_TEMPLATE_PATH}")
 
@@ -152,5 +155,9 @@ def render_resume_docx(resume_json: Dict[str, Any]) -> Path:
 
     out_path = RESUME_OUTPUT_DIR / filename
     doc.save(str(out_path))
-    logger.info("Resume saved: %s", out_path)
+    logger.info("Resume saved locally: %s", out_path)
+
+    # Upload to Azure Blob Storage if configured
+    upload_resume(out_path)
+
     return out_path

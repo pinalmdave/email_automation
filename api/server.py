@@ -2,6 +2,7 @@
 FastAPI application entry point for the Claude Smart Email App.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -13,10 +14,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import WEB_API_PORT
 
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3001,http://127.0.0.1:3001").split(",")
+
 app = FastAPI(title="Claude Smart Email App", version="3.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3001", "http://127.0.0.1:3001"],
+    allow_origins=[o.strip() for o in ALLOWED_ORIGINS],
     allow_methods=["*"],
     allow_headers=["*"],
     allow_credentials=True,

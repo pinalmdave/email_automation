@@ -1,3 +1,8 @@
 anthropic>=0.79.0
 python-dotenv>=1.0.0
 docxtpl>=0.16.0
+python-docx>=1.1.0
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+azure-storage-blob>=12.20.0
+gunicorn>=22.0.0

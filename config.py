@@ -48,7 +48,13 @@ RESUME_PROMPT_PATH = PROMPTS_DIR / "resume_prompt.txt"
 RESUME_OUTPUT_DIR = Path(
     os.getenv("RESUME_OUTPUT_DIR", str(Path.home() / "OneDrive" / "Desktop" / "CLAUDE_GENERATED_RESUME"))
 )
-RESUME_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+try:
+    RESUME_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+except OSError:
+    # In cloud environments the local path may not be writable; blob storage is used instead
+    import tempfile
+    RESUME_OUTPUT_DIR = Path(tempfile.gettempdir()) / "resumes"
+    RESUME_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 STATE_FILE_PATH = BASE_DIR / "processed_emails.json"
 FOLLOWUP_STATE_PATH = BASE_DIR / "followup_state.json"

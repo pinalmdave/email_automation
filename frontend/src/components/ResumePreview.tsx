@@ -9,10 +9,12 @@ export default function ResumePreview({ filename }: ResumePreviewProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+
   useEffect(() => {
     setLoading(true);
     setError(null);
-    fetch(`/api/resumes/${encodeURIComponent(filename)}/preview`)
+    fetch(`${API_BASE}/api/resumes/${encodeURIComponent(filename)}/preview`)
       .then(async (res) => {
         if (!res.ok) throw new Error(`Failed to load preview: ${res.status}`);
         const data = await res.json();

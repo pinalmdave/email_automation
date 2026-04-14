@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { api } from '../api/client';
+import { api, API_BASE } from '../api/client';
 import type { EmailRecord } from '../api/types';
 import ResumePreview from '../components/ResumePreview';
 
@@ -67,7 +67,7 @@ export default function EmailDetail() {
               <h3 className="font-semibold text-gray-900">Resume: {email.resume_file}</h3>
               <div className="flex gap-2">
                 <a
-                  href={`/api/resumes/${encodeURIComponent(email.resume_file)}/download`}
+                  href={`${API_BASE}/api/resumes/${encodeURIComponent(email.resume_file)}/download`}
                   className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
                 >
                   Download Resume
