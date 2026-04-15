@@ -9,14 +9,18 @@ from typing_extensions import TypedDict
 
 
 class EmailPipelineState(TypedDict):
-    """State that flows through every node in the email pipeline graph."""
+    """State that flows through every agent in the email pipeline graph."""
 
-    # -- Control flow --
-    phase: str  # "start", "phase1", "phase2", "done"
+    # -- Supervisor control --
+    next_agent: str  # set by supervisor, read by conditional edge
     run_phase1: bool
     run_phase2: bool
 
-    # -- Phase 1: new recruiter emails --
+    # -- Scan tracking --
+    recruiter_scan_done: bool
+    followup_scan_done: bool
+
+    # -- Recruiter email processing --
     scanned_emails: List[Dict[str, Any]]
     current_email_index: int
     current_email: Dict[str, Any]
@@ -24,7 +28,7 @@ class EmailPipelineState(TypedDict):
     resume_path: str
     phase1_processed: int
 
-    # -- Phase 2: follow-up emails --
+    # -- Follow-up email processing --
     followup_emails: List[Dict[str, Any]]
     current_followup_index: int
     current_followup: Dict[str, Any]

@@ -1,45 +1,27 @@
 """
 Builds and compiles the LangGraph StateGraph for the email pipeline.
+
+Hub-and-spoke topology: every agent returns to the supervisor, which
+inspects state and routes to the next agent.
 """
 
 from langgraph.graph import END, StateGraph
 
-from graph.nodes import (
-    analyze_and_reply_followup,
-    finalize,
-    generate_resume,
-    pick_next_email,
-    pick_next_followup,
-    render_and_draft,
-    route_phases,
-    scan_followup_emails,
-    scan_recruiter_emails,
-)
+from agents.analyze_and_reply_followup_agent import analyze_and_reply_followup
+from agents.finalize_agent import finalize
+from agents.generate_resume_agent import generate_resume
+from agents.pick_next_email_agent import pick_next_email
+from agents.pick_next_followup_agent import pick_next_followup
+from agents.render_and_draft_agent import render_and_draft
+from agents.scan_followup_emails_agent import scan_followup_emails
+from agents.scan_recruiter_emails_agent import scan_recruiter_emails
+from agents.supervisor_agent import supervisor
 from graph.state import EmailPipelineState
 
 
-def _phase_router(state: EmailPipelineState) -> str:
-    """Route after the supervisor based on which phase to enter."""
-    phase = state.get("phase", "done")
-    if phase == "phase1":
-        return "scan_recruiter_emails"
-    if phase == "phase2":
-        return "scan_followup_emails"
-    return "finalize"
-
-
-def _email_picker_router(state: EmailPipelineState) -> str:
-    """Route after pick_next_email: continue processing or go back to supervisor."""
-    if state.get("current_email"):
-        return "generate_resume"
-    return "route_phases"
-
-
-def _followup_picker_router(state: EmailPipelineState) -> str:
-    """Route after pick_next_followup: continue or go back to supervisor."""
-    if state.get("current_followup"):
-        return "analyze_and_reply_followup"
-    return "route_phases"
+def _supervisor_router(state: EmailPipelineState) -> str:
+    """Read the supervisor's routing decision from state."""
+    return state.get("next_agent", "finalize_agent")
 
 
 def build_graph() -> StateGraph:
@@ -47,36 +29,36 @@ def build_graph() -> StateGraph:
     graph = StateGraph(EmailPipelineState)
 
     # -- Add nodes --
-    graph.add_node("route_phases", route_phases)
-    graph.add_node("scan_recruiter_emails", scan_recruiter_emails)
-    graph.add_node("pick_next_email", pick_next_email)
-    graph.add_node("generate_resume", generate_resume)
-    graph.add_node("render_and_draft", render_and_draft)
-    graph.add_node("scan_followup_emails", scan_followup_emails)
-    graph.add_node("pick_next_followup", pick_next_followup)
-    graph.add_node("analyze_and_reply_followup", analyze_and_reply_followup)
-    graph.add_node("finalize", finalize)
+    graph.add_node("supervisor_agent", supervisor)
+    graph.add_node("scan_recruiter_emails_agent", scan_recruiter_emails)
+    graph.add_node("pick_next_email_agent", pick_next_email)
+    graph.add_node("generate_resume_agent", generate_resume)
+    graph.add_node("render_and_draft_agent", render_and_draft)
+    graph.add_node("scan_followup_emails_agent", scan_followup_emails)
+    graph.add_node("pick_next_followup_agent", pick_next_followup)
+    graph.add_node("analyze_and_reply_followup_agent", analyze_and_reply_followup)
+    graph.add_node("finalize_agent", finalize)
 
-    # -- Entry point --
-    graph.set_entry_point("route_phases")
+    # -- Entry point: always start at the supervisor --
+    graph.set_entry_point("supervisor_agent")
 
-    # -- Edges --
-    # Supervisor routes to the appropriate phase
-    graph.add_conditional_edges("route_phases", _phase_router)
+    # -- Supervisor routes to any agent --
+    graph.add_conditional_edges("supervisor_agent", _supervisor_router)
 
-    # Phase 1 flow
-    graph.add_edge("scan_recruiter_emails", "pick_next_email")
-    graph.add_conditional_edges("pick_next_email", _email_picker_router)
-    graph.add_edge("generate_resume", "render_and_draft")
-    graph.add_edge("render_and_draft", "pick_next_email")
+    # -- Every agent returns to the supervisor --
+    for agent_name in [
+        "scan_recruiter_emails_agent",
+        "pick_next_email_agent",
+        "generate_resume_agent",
+        "render_and_draft_agent",
+        "scan_followup_emails_agent",
+        "pick_next_followup_agent",
+        "analyze_and_reply_followup_agent",
+    ]:
+        graph.add_edge(agent_name, "supervisor_agent")
 
-    # Phase 2 flow
-    graph.add_edge("scan_followup_emails", "pick_next_followup")
-    graph.add_conditional_edges("pick_next_followup", _followup_picker_router)
-    graph.add_edge("analyze_and_reply_followup", "pick_next_followup")
-
-    # Finalize terminates the graph
-    graph.add_edge("finalize", END)
+    # -- Finalize terminates the graph --
+    graph.add_edge("finalize_agent", END)
 
     return graph
 

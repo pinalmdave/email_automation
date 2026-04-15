@@ -35,9 +35,11 @@ logger = logging.getLogger("smart_email_app")
 def _initial_state(run_phase1: bool, run_phase2: bool) -> dict:
     """Build the initial state dict for a single pipeline invocation."""
     return {
-        "phase": "start",
+        "next_agent": "",
         "run_phase1": run_phase1,
         "run_phase2": run_phase2,
+        "recruiter_scan_done": False,
+        "followup_scan_done": False,
         "scanned_emails": [],
         "current_email_index": 0,
         "current_email": {},
