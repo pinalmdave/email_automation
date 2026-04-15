@@ -58,6 +58,3 @@ except OSError:
 
 STATE_FILE_PATH = BASE_DIR / "processed_emails.json"
 FOLLOWUP_STATE_PATH = BASE_DIR / "followup_state.json"
-
-# === Web UI ===
-WEB_API_PORT = int(os.getenv("WEB_API_PORT", "8001"))

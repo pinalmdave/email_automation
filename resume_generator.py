@@ -9,8 +9,9 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List
 
-import anthropic
 from docxtpl import DocxTemplate
+from langchain_anthropic import ChatAnthropic
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from config import (
     CLAUDE_MODEL,
@@ -54,15 +55,13 @@ def generate_resume_json(email_data: Dict[str, Any]) -> Dict[str, Any]:
     """Send recruiter email to Claude and get back structured resume JSON."""
     system_prompt = RESUME_PROMPT_PATH.read_text(encoding="utf-8")
 
-    client = anthropic.Anthropic()
-    response = client.messages.create(
-        model=CLAUDE_MODEL,
-        max_tokens=4096,
-        system=system_prompt,
-        messages=[{"role": "user", "content": json.dumps(email_data, ensure_ascii=False)}],
-    )
+    llm = ChatAnthropic(model=CLAUDE_MODEL, max_tokens=4096)
+    response = llm.invoke([
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=json.dumps(email_data, ensure_ascii=False)),
+    ])
 
-    raw_text = response.content[0].text
+    raw_text = response.content
     resume_json = _extract_json_from_text(raw_text)
     logger.info(
         "Generated resume JSON — role: %s, company: %s, confidence: %s",

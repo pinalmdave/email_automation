@@ -1,6 +1,8 @@
 """
 Claude Smart Email App — Entry Point
 
+Multi-agent pipeline powered by LangGraph.
+
 Phase 1: Scans Gmail for recruiter emails, generates tailored resumes via Claude AI,
          and creates draft replies with the resume attached.
 Phase 2: Detects follow-up replies from recruiters, analyzes intent (salary, availability,
@@ -20,11 +22,7 @@ import sys
 import time
 
 from config import SCAN_INTERVAL_SECONDS
-from email_drafter import create_draft_reply
-from email_scanner import scan_for_recruiter_emails
-from followup_handler import run_followup_pipeline
-from resume_generator import generate_resume_json, render_resume_docx
-from state_tracker import is_processed, mark_processed
+from graph import compile_graph
 
 logging.basicConfig(
     level=logging.INFO,
@@ -34,64 +32,25 @@ logging.basicConfig(
 logger = logging.getLogger("smart_email_app")
 
 
-def run_phase1_pipeline() -> int:
-    """
-    Phase 1: scan -> filter AI/Cloud positions -> generate resume -> create draft.
-    Returns number of emails processed.
-    """
-    logger.info("=" * 60)
-    logger.info("PHASE 1: Scanning for new recruiter emails...")
-
-    emails = scan_for_recruiter_emails()
-    if not emails:
-        logger.info("No new recruiter emails found.")
-        return 0
-
-    new_emails = [e for e in emails if not is_processed(e.get("message_id", ""))]
-    if not new_emails:
-        logger.info("All %d email(s) already processed.", len(emails))
-        return 0
-
-    logger.info("Processing %d new email(s) out of %d found.", len(new_emails), len(emails))
-    processed_count = 0
-
-    for i, email_data in enumerate(new_emails, 1):
-        subject = email_data.get("subject", "(no subject)")
-        from_email = email_data.get("from_email", "(unknown)")
-        message_id = email_data.get("message_id", "")
-
-        logger.info("[%d/%d] Processing: %s from %s", i, len(new_emails), subject, from_email)
-
-        try:
-            # Step 1: Generate resume JSON via Claude
-            logger.info("  Calling Claude API for resume generation...")
-            resume_json = generate_resume_json(email_data)
-
-            # Step 2: Render DOCX from template
-            logger.info("  Rendering DOCX resume...")
-            resume_path = render_resume_docx(resume_json)
-
-            # Step 3: Create Gmail draft with resume attached
-            logger.info("  Creating Gmail draft...")
-            create_draft_reply(email_data, resume_json, resume_path)
-
-            # Step 4: Mark as processed
-            mark_processed(message_id, subject, from_email, str(resume_path))
-            processed_count += 1
-            logger.info("  Done! Resume: %s", resume_path.name)
-
-        except Exception as e:
-            logger.error("  FAILED to process '%s': %s", subject, e, exc_info=True)
-
-    logger.info("Phase 1 complete. Processed %d/%d email(s).", processed_count, len(new_emails))
-    return processed_count
-
-
-def run_phase2_pipeline() -> int:
-    """Phase 2: Intelligent follow-up conversation with recruiters."""
-    logger.info("=" * 60)
-    logger.info("PHASE 2: Scanning for recruiter follow-ups...")
-    return run_followup_pipeline()
+def _initial_state(run_phase1: bool, run_phase2: bool) -> dict:
+    """Build the initial state dict for a single pipeline invocation."""
+    return {
+        "phase": "start",
+        "run_phase1": run_phase1,
+        "run_phase2": run_phase2,
+        "scanned_emails": [],
+        "current_email_index": 0,
+        "current_email": {},
+        "resume_json": {},
+        "resume_path": "",
+        "phase1_processed": 0,
+        "followup_emails": [],
+        "current_followup_index": 0,
+        "current_followup": {},
+        "phase2_processed": 0,
+        "errors": [],
+        "summary": "",
+    }
 
 
 def main():
@@ -119,20 +78,23 @@ def main():
     logger.info("Claude Smart Email App starting...")
     logger.info("Mode: %s | Phases: %s", "single run" if args.once else f"loop (every {args.interval}s)", " + ".join(phases))
 
-    def run_all():
-        if run_p1:
-            run_phase1_pipeline()
-        if run_p2:
-            run_phase2_pipeline()
+    graph = compile_graph()
+
+    def run_pipeline():
+        state = _initial_state(run_p1, run_p2)
+        result = graph.invoke(state)
+        summary = result.get("summary", "")
+        if summary:
+            logger.info("Summary: %s", summary.split("\n")[0])
 
     if args.once:
-        run_all()
+        run_pipeline()
         return
 
     # Loop mode
     while True:
         try:
-            run_all()
+            run_pipeline()
         except KeyboardInterrupt:
             logger.info("Interrupted by user. Shutting down.")
             sys.exit(0)

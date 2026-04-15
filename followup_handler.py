@@ -17,7 +17,9 @@ from email.mime.text import MIMEText
 from email.utils import parsedate_to_datetime
 from typing import Any, Dict, List, Optional
 
-import anthropic
+from langchain_anthropic import ChatAnthropic
+from langchain_core.messages import HumanMessage, SystemMessage
+
 from config import (
     CLAUDE_MODEL,
     EXCLUDED_DOMAINS,
@@ -233,15 +235,13 @@ def generate_followup_reply(email_data: Dict[str, Any]) -> Dict[str, Any]:
     """Use Claude to analyze recruiter follow-up and generate a smart reply."""
     system_prompt = FOLLOWUP_PROMPT_PATH.read_text(encoding="utf-8")
 
-    client = anthropic.Anthropic()
-    response = client.messages.create(
-        model=CLAUDE_MODEL,
-        max_tokens=2048,
-        system=system_prompt,
-        messages=[{"role": "user", "content": json.dumps(email_data, ensure_ascii=False)}],
-    )
+    llm = ChatAnthropic(model=CLAUDE_MODEL, max_tokens=2048)
+    response = llm.invoke([
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=json.dumps(email_data, ensure_ascii=False)),
+    ])
 
-    raw_text = response.content[0].text.strip()
+    raw_text = response.content.strip()
     # Strip markdown fences
     if raw_text.startswith("```"):
         raw_text = re.sub(r"^```(?:json)?\s*\n?", "", raw_text)
