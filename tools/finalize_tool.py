@@ -1,5 +1,5 @@
 """
-Finalize Agent — builds a human-readable summary of the pipeline run.
+Finalize Tool — builds a human-readable summary of the pipeline run.
 """
 
 import logging

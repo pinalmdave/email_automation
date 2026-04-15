@@ -1,10 +1,12 @@
 """
-Connects to Gmail via IMAP, scans configured folders, and returns emails
-matching recruiter criteria (subject keywords, domain filter, age limit).
+Scan Recruiter Emails Tool — connects to Gmail via IMAP, scans configured
+folders, and returns emails matching recruiter criteria (domain filter,
+subject keywords, age limit, AI/Cloud position filter).
 """
 
 import email
 import imaplib
+import json
 import logging
 import re
 from datetime import datetime, timedelta, timezone
@@ -19,11 +21,16 @@ from config import (
     IMAP_USER,
     MAX_EMAIL_AGE_HOURS,
     SCAN_FOLDERS,
-    SUBJECT_KEYWORDS,
+    STATE_FILE_PATH,
 )
+from graph.state import EmailPipelineState
 
 logger = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# Email parsing and filtering helpers
+# ---------------------------------------------------------------------------
 
 def _header_str(value: Any) -> str:
     if value is None:
@@ -46,29 +53,21 @@ def _email_passes_domain(from_email: str) -> bool:
 # ---------------------------------------------------------------------------
 # Smart AI / Cloud position filter
 # ---------------------------------------------------------------------------
-# Positive signals: AI, GenAI, Generative AI, Cloud, Azure, AWS roles
-# at Architect, Engineer, Developer, Lead, Principal, Consultant level.
-# Negative signals: pure UI/UX, Python-only, .NET-only, Java-only etc.
-# that don't mention AI or Cloud at all.
 
-# These terms indicate the job is in the AI/Cloud space
 AI_CLOUD_KEYWORDS = (
-    # AI keywords (with word boundary tricks using spaces/punctuation)
     " ai ", " ai/", " ai,", " ai.", " ai-", "(ai)", "a.i.",
     "artificial intelligence",
     "gen ai", "genai", "generative ai", "agentic ai", "ai agent",
     "machine learning", " ml ", " ml/", " ml,", "ai/ml",
     "llm", "large language model", "nlp", "natural language",
     "deep learning", "computer vision", "data science",
-    # Cloud keywords — individual platform names match broadly
     "azure", "aws ", "aws,", "aws/", "aws-",
     "gcp", "google cloud",
     "cloud ", "cloud,", "cloud-", "cloud/",
-    "solutions architect",  # often cloud-oriented
-    "solution architect",   # common variation
+    "solutions architect",
+    "solution architect",
 )
 
-# These roles WITHOUT any AI/Cloud context should be excluded
 NON_TARGET_ROLES = (
     "ui developer", "ui engineer", "ui architect",
     "ux developer", "ux engineer", "ux designer",
@@ -86,24 +85,9 @@ NON_TARGET_ROLES = (
 
 
 def _is_ai_cloud_position(subject: str, body: str = "") -> bool:
-    """
-    Smart filter: returns True only for AI, GenAI, Cloud positions.
-    Checks subject first (fast), then body for edge cases.
-    Pads text with spaces for word-boundary matching.
-    """
-    # Pad with spaces so " ai " matches at start/end of text too
+    """Returns True only for AI, GenAI, Cloud positions."""
     text = " " + (subject + " " + body[:2000]).lower() + " "
-
-    # Check if any AI/Cloud keyword is present
-    has_ai_cloud = any(kw in text for kw in AI_CLOUD_KEYWORDS)
-
-    if has_ai_cloud:
-        # Double-check: if a NON_TARGET_ROLE matches AND no AI/Cloud context, reject
-        # This prevents "Python Developer" that just mentions "cloud" in a generic way
-        return True
-
-    # If no explicit AI/Cloud keyword, reject — we only want AI/Cloud roles
-    return False
+    return any(kw in text for kw in AI_CLOUD_KEYWORDS)
 
 
 def _email_passes_subject(subject: str) -> bool:
@@ -111,7 +95,6 @@ def _email_passes_subject(subject: str) -> bool:
     subject_lower = (subject or "").lower()
     if "re:" in subject_lower:
         return False
-    # Must contain at least one role-level keyword (architect, engineer, developer, etc.)
     role_keywords = ("architect", "engineer", "developer", "consultant", "lead", "principal", "specialist")
     return any(kw in subject_lower for kw in role_keywords)
 
@@ -172,7 +155,6 @@ def _fetch_and_parse(mail: imaplib.IMAP4_SSL, uid: bytes, folder: str) -> Dict[s
 
     body = _extract_body(msg)
 
-    # Smart AI/Cloud position filter — checks subject + body
     if not _is_ai_cloud_position(subject, body):
         logger.debug("Skipped (not AI/Cloud): %s", subject)
         return None
@@ -207,11 +189,8 @@ def _search_folder(mail: imaplib.IMAP4_SSL, folder: str, since_criteria: str) ->
     return results
 
 
-def scan_for_recruiter_emails() -> List[Dict[str, Any]]:
-    """
-    Connect to Gmail, scan INBOX and UPDATES folders, apply recruiter filters.
-    Returns list of email dicts ready for processing.
-    """
+def _scan_for_recruiter_emails() -> List[Dict[str, Any]]:
+    """Connect to Gmail, scan folders, apply recruiter filters."""
     if not IMAP_USER or not IMAP_PASSWORD:
         raise RuntimeError("IMAP_USER and IMAP_PASSWORD must be set in .env")
 
@@ -243,3 +222,39 @@ def scan_for_recruiter_emails() -> List[Dict[str, Any]]:
     mail.logout()
     logger.info("Found %d recruiter email(s)", len(all_emails))
     return all_emails
+
+
+# ---------------------------------------------------------------------------
+# Agent node function
+# ---------------------------------------------------------------------------
+
+def _is_processed(message_id: str) -> bool:
+    """Check if an email was already processed in a previous run."""
+    if not message_id:
+        return False
+    if not STATE_FILE_PATH.exists():
+        return False
+    try:
+        state = json.loads(STATE_FILE_PATH.read_text(encoding="utf-8"))
+        return message_id in state
+    except (json.JSONDecodeError, OSError):
+        return False
+
+
+def scan_recruiter_emails(state: EmailPipelineState) -> Dict[str, Any]:
+    """Scan Gmail for new recruiter emails and filter already-processed ones."""
+    emails = _scan_for_recruiter_emails()
+    new_emails = [e for e in emails if not _is_processed(e.get("message_id", ""))]
+
+    if not new_emails:
+        logger.info("No new recruiter emails to process (found %d, all processed).", len(emails))
+    else:
+        logger.info("Found %d new email(s) out of %d.", len(new_emails), len(emails))
+
+    return {
+        "scanned_emails": new_emails,
+        "current_email_index": 0,
+        "current_email": {},
+        "phase1_processed": 0,
+        "recruiter_scan_done": True,
+    }

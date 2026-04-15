@@ -1,11 +1,14 @@
 """
-Creates a Gmail draft reply to a recruiter email with the generated resume attached.
-Draft is appended to [Gmail]/Drafts via IMAP — NOT sent automatically.
+Render and Draft Tool — creates a Gmail draft reply to a recruiter email
+with the generated resume attached. Draft is appended to [Gmail]/Drafts
+via IMAP — NOT sent automatically.
 """
 
 import imaplib
+import json
 import logging
 import re
+from datetime import datetime, timezone
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -17,7 +20,9 @@ from config import (
     IMAP_PASSWORD,
     IMAP_PORT,
     IMAP_USER,
+    STATE_FILE_PATH,
 )
+from graph.state import EmailPipelineState
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +41,10 @@ REPLY_BODY_TEMPLATE = """Hi {sender_first_name},
 \tLinkedIn: https://www.linkedin.com/in/pinal-dave/
 """
 
+
+# ---------------------------------------------------------------------------
+# Draft creation helpers
+# ---------------------------------------------------------------------------
 
 def _get_recipient_address(from_email: str) -> str:
     match = re.search(r"<([^>]+)>", from_email)
@@ -71,15 +80,12 @@ def _format_quoted_chain(email_date: str, from_email: str, raw_email_body: str) 
     return f"\n\n{header}\n{quoted_lines}"
 
 
-def create_draft_reply(
+def _create_draft_reply(
     email_data: Dict[str, Any],
     resume_json: Dict[str, Any],
     resume_path: Path,
 ) -> None:
-    """
-    Create a Gmail draft replying to the recruiter with the generated resume attached.
-    The draft is NOT sent — it appears in Gmail Drafts for manual review.
-    """
+    """Create a Gmail draft replying to the recruiter with the resume attached."""
     if not IMAP_USER or not IMAP_PASSWORD:
         raise RuntimeError("IMAP_USER and IMAP_PASSWORD must be set in .env")
 
@@ -91,10 +97,8 @@ def create_draft_reply(
     subject = email_data.get("subject", "")
     reply_subject = f"Re: {subject}" if subject and not subject.strip().lower().startswith("re:") else subject
 
-    # Extract sender first name for personalized greeting
     sender_name = _extract_sender_name(from_email, resume_json)
     sender_first_name = sender_name.split()[0] if sender_name and sender_name != "there" else ""
-    # Build greeting: "Hi John," or just "Hi," if name unavailable
     greeting_name = sender_first_name if sender_first_name else ""
     reply_text = REPLY_BODY_TEMPLATE.replace("{sender_first_name}", greeting_name)
     quoted_chain = _format_quoted_chain(
@@ -143,7 +147,7 @@ def create_draft_reply(
             try:
                 mail.copy(uid, AUTO_REPLY_LABEL)
             except Exception:
-                pass  # Label may not exist in Gmail
+                pass
 
     # Mark the original email as read and apply AUTO_APPLY_CLAUDE label
     original_folder = email_data.get("folder", "INBOX")
@@ -151,9 +155,7 @@ def create_draft_reply(
     if original_uid:
         try:
             mail.select(original_folder, readonly=False)
-            # Mark as read
             mail.store(original_uid.encode() if isinstance(original_uid, str) else original_uid, "+FLAGS", "\\Seen")
-            # Apply label by copying to label folder
             try:
                 mail.copy(original_uid.encode() if isinstance(original_uid, str) else original_uid, AUTO_REPLY_LABEL)
             except Exception:
@@ -163,3 +165,67 @@ def create_draft_reply(
 
     mail.logout()
     logger.info("Draft created for: %s -> %s (%s)", to_email, reply_subject, resume_filename)
+
+
+# ---------------------------------------------------------------------------
+# Agent node function
+# ---------------------------------------------------------------------------
+
+def _mark_processed(message_id: str, subject: str, from_email: str, resume_file: str) -> None:
+    """Persist a processed email to disk so it won't be reprocessed next run."""
+    try:
+        state = json.loads(STATE_FILE_PATH.read_text(encoding="utf-8")) if STATE_FILE_PATH.exists() else {}
+    except (json.JSONDecodeError, OSError):
+        state = {}
+    state[message_id] = {
+        "processed_at": datetime.now(timezone.utc).isoformat(),
+        "subject": subject,
+        "from_email": from_email,
+        "resume_file": resume_file,
+    }
+    STATE_FILE_PATH.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
+    logger.info("Marked as processed: %s", message_id)
+
+
+def render_and_draft(state: EmailPipelineState) -> Dict[str, Any]:
+    """Create a Gmail draft with the resume attached and mark the email processed."""
+    email_data = state["current_email"]
+    resume_json = state.get("resume_json", {})
+    resume_path_str = state.get("resume_path", "")
+    idx = state.get("current_email_index", 0)
+    processed = state.get("phase1_processed", 0)
+
+    if not resume_path_str or not resume_json:
+        return {
+            "current_email_index": idx + 1,
+            "current_email": {},
+            "resume_json": {},
+            "resume_path": "",
+        }
+
+    resume_path = Path(resume_path_str)
+    message_id = email_data.get("message_id", "")
+    subject = email_data.get("subject", "")
+    from_email = email_data.get("from_email", "")
+
+    try:
+        logger.info("  Creating Gmail draft...")
+        _create_draft_reply(email_data, resume_json, resume_path)
+        _mark_processed(message_id, subject, from_email, str(resume_path))
+        logger.info("  Done! Resume: %s", resume_path.name)
+        return {
+            "current_email_index": idx + 1,
+            "current_email": {},
+            "resume_json": {},
+            "resume_path": "",
+            "phase1_processed": processed + 1,
+        }
+    except Exception as e:
+        logger.error("  FAILED to draft for '%s': %s", subject, e, exc_info=True)
+        return {
+            "current_email_index": idx + 1,
+            "current_email": {},
+            "resume_json": {},
+            "resume_path": "",
+            "errors": [f"Draft creation failed for '{subject}': {e}"],
+        }
