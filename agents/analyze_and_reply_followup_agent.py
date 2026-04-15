@@ -165,11 +165,11 @@ def _create_followup_draft(
 
 def analyze_and_reply_followup(state: EmailPipelineState) -> Dict[str, Any]:
     """Analyze follow-up intent with Claude and create a reply draft."""
-    from tools.scan_followup_emails_tool import mark_followup_processed
+    from agents.scan_followup_emails_node import mark_followup_processed
 
     followup = state["current_followup"]
     idx = state.get("current_followup_index", 0)
-    processed = state.get("phase2_processed", 0)
+    processed = state.get("followup_processed", 0)
     message_id = followup.get("message_id", "")
     subject = followup.get("subject", "?")
 
@@ -185,7 +185,7 @@ def analyze_and_reply_followup(state: EmailPipelineState) -> Dict[str, Any]:
         return {
             "current_followup_index": idx + 1,
             "current_followup": {},
-            "phase2_processed": processed + 1,
+            "followup_processed": processed + 1,
         }
     except Exception as e:
         logger.error("  FAILED: %s", e, exc_info=True)

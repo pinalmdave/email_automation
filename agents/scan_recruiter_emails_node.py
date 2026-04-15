@@ -1,5 +1,5 @@
 """
-Scan Recruiter Emails Tool — connects to Gmail via IMAP, scans configured
+Scan Recruiter Emails Node — connects to Gmail via IMAP, scans configured
 folders, and returns emails matching recruiter criteria (domain filter,
 subject keywords, age limit, AI/Cloud position filter).
 """
@@ -255,6 +255,6 @@ def scan_recruiter_emails(state: EmailPipelineState) -> Dict[str, Any]:
         "scanned_emails": new_emails,
         "current_email_index": 0,
         "current_email": {},
-        "phase1_processed": 0,
+        "recruiter_processed": 0,
         "recruiter_scan_done": True,
     }

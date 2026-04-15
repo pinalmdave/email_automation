@@ -1,5 +1,5 @@
 """
-Finalize Tool — builds a human-readable summary of the pipeline run.
+Finalize Node — builds a human-readable summary of the pipeline run.
 """
 
 import logging
@@ -12,14 +12,14 @@ logger = logging.getLogger(__name__)
 
 def finalize(state: EmailPipelineState) -> Dict[str, Any]:
     """Build a human-readable summary of the pipeline run."""
-    p1 = state.get("phase1_processed", 0)
-    p2 = state.get("phase2_processed", 0)
+    p1 = state.get("recruiter_processed", 0)
+    p2 = state.get("followup_processed", 0)
     errors = state.get("errors", [])
 
     parts = []
-    if state.get("run_phase1"):
+    if state.get("run_recruiter_scan"):
         parts.append(f"Recruiter emails: {p1} processed")
-    if state.get("run_phase2"):
+    if state.get("run_followup_scan"):
         parts.append(f"Follow-ups: {p2} processed")
     if errors:
         parts.append(f"Errors: {len(errors)}")

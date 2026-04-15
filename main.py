@@ -32,12 +32,12 @@ logging.basicConfig(
 logger = logging.getLogger("smart_email_app")
 
 
-def _initial_state(run_phase1: bool, run_phase2: bool) -> dict:
+def _initial_state(run_recruiter_scan: bool, run_followup_scan: bool) -> dict:
     """Build the initial state dict for a single pipeline invocation."""
     return {
-        "next_agent": "",
-        "run_phase1": run_phase1,
-        "run_phase2": run_phase2,
+        "next_node": "",
+        "run_recruiter_scan": run_recruiter_scan,
+        "run_followup_scan": run_followup_scan,
         "recruiter_scan_done": False,
         "followup_scan_done": False,
         "scanned_emails": [],
@@ -45,11 +45,11 @@ def _initial_state(run_phase1: bool, run_phase2: bool) -> dict:
         "current_email": {},
         "resume_json": {},
         "resume_path": "",
-        "phase1_processed": 0,
+        "recruiter_processed": 0,
         "followup_emails": [],
         "current_followup_index": 0,
         "current_followup": {},
-        "phase2_processed": 0,
+        "followup_processed": 0,
         "errors": [],
         "summary": "",
     }
@@ -83,7 +83,7 @@ def main():
     graph = compile_graph()
 
     def run_pipeline():
-        state = _initial_state(run_p1, run_p2)
+        state = _initial_state(run_recruiter_scan=run_p1, run_followup_scan=run_p2)
         result = graph.invoke(state)
         summary = result.get("summary", "")
         if summary:

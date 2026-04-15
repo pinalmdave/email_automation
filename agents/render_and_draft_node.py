@@ -1,5 +1,5 @@
 """
-Render and Draft Tool — creates a Gmail draft reply to a recruiter email
+Render and Draft Node — creates a Gmail draft reply to a recruiter email
 with the generated resume attached. Draft is appended to [Gmail]/Drafts
 via IMAP — NOT sent automatically.
 """
@@ -193,7 +193,7 @@ def render_and_draft(state: EmailPipelineState) -> Dict[str, Any]:
     resume_json = state.get("resume_json", {})
     resume_path_str = state.get("resume_path", "")
     idx = state.get("current_email_index", 0)
-    processed = state.get("phase1_processed", 0)
+    processed = state.get("recruiter_processed", 0)
 
     if not resume_path_str or not resume_json:
         return {
@@ -218,7 +218,7 @@ def render_and_draft(state: EmailPipelineState) -> Dict[str, Any]:
             "current_email": {},
             "resume_json": {},
             "resume_path": "",
-            "phase1_processed": processed + 1,
+            "recruiter_processed": processed + 1,
         }
     except Exception as e:
         logger.error("  FAILED to draft for '%s': %s", subject, e, exc_info=True)

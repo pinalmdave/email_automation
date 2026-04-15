@@ -1,9 +1,9 @@
 """
 Supervisor Agent — intelligent central router for the email pipeline.
 
-Inspects the current state and decides which agent to invoke next.
-Every other agent returns to the supervisor after completing its work.
-No rigid phase ordering — the supervisor reasons about what needs to happen.
+Inspects the current state and decides which node to invoke next.
+Every other node returns to the supervisor after completing its work.
+No rigid ordering — the supervisor reasons about what needs to happen.
 
 The supervisor also handles iterator logic (picking the next email /
 follow-up from the scanned list) inline, eliminating the need for
@@ -17,15 +17,15 @@ from graph.state import EmailPipelineState
 
 logger = logging.getLogger(__name__)
 
-# The supervisor returns a `next_agent` value that the graph's conditional
+# The supervisor returns a `next_node` value that the graph's conditional
 # edge uses to route to the correct node.
 
-TOOL_SCAN_RECRUITER   = "scan_recruiter_emails_tool"
+NODE_SCAN_RECRUITER   = "scan_recruiter_emails_node"
 AGENT_GENERATE_RESUME = "generate_resume_agent"
-TOOL_RENDER_DRAFT     = "render_and_draft_tool"
-TOOL_SCAN_FOLLOWUP    = "scan_followup_emails_tool"
+NODE_RENDER_DRAFT     = "render_and_draft_node"
+NODE_SCAN_FOLLOWUP    = "scan_followup_emails_node"
 AGENT_ANALYZE_REPLY   = "analyze_and_reply_followup_agent"
-TOOL_FINALIZE         = "finalize_tool"
+NODE_FINALIZE         = "finalize_node"
 
 
 def supervisor(state: EmailPipelineState) -> Dict[str, Any]:
@@ -54,11 +54,11 @@ def supervisor(state: EmailPipelineState) -> Dict[str, Any]:
         resume_path = state.get("resume_path", "")
         resume_json = state.get("resume_json", {})
         if resume_path and resume_json:
-            logger.info("  Supervisor → render_and_draft_tool")
-            return {"next_agent": TOOL_RENDER_DRAFT}
+            logger.info("  Supervisor → render_and_draft_node")
+            return {"next_node": NODE_RENDER_DRAFT}
         else:
             logger.info("  Supervisor → generate_resume_agent")
-            return {"next_agent": AGENT_GENERATE_RESUME}
+            return {"next_node": AGENT_GENERATE_RESUME}
 
     recruiter_scan_done = state.get("recruiter_scan_done", False)
     if recruiter_scan_done:
@@ -75,20 +75,20 @@ def supervisor(state: EmailPipelineState) -> Dict[str, Any]:
             )
             logger.info("  Supervisor → generate_resume_agent")
             return {
-                "next_agent": AGENT_GENERATE_RESUME,
+                "next_node": AGENT_GENERATE_RESUME,
                 "current_email": email_data,
             }
 
-    if not recruiter_scan_done and state.get("run_phase1", False):
+    if not recruiter_scan_done and state.get("run_recruiter_scan", False):
         logger.info("=" * 60)
         logger.info("Scanning for new recruiter emails...")
-        return {"next_agent": TOOL_SCAN_RECRUITER}
+        return {"next_node": NODE_SCAN_RECRUITER}
 
     # ── Follow-up email processing ──────────────────────────────────
     current_followup = state.get("current_followup", {})
     if current_followup:
         logger.info("  Supervisor → analyze_and_reply_followup_agent")
-        return {"next_agent": AGENT_ANALYZE_REPLY}
+        return {"next_node": AGENT_ANALYZE_REPLY}
 
     followup_scan_done = state.get("followup_scan_done", False)
     if followup_scan_done:
@@ -105,15 +105,15 @@ def supervisor(state: EmailPipelineState) -> Dict[str, Any]:
             )
             logger.info("  Supervisor → analyze_and_reply_followup_agent")
             return {
-                "next_agent": AGENT_ANALYZE_REPLY,
+                "next_node": AGENT_ANALYZE_REPLY,
                 "current_followup": followup,
             }
 
-    if not followup_scan_done and state.get("run_phase2", False):
+    if not followup_scan_done and state.get("run_followup_scan", False):
         logger.info("=" * 60)
         logger.info("Scanning for recruiter follow-ups...")
-        return {"next_agent": TOOL_SCAN_FOLLOWUP}
+        return {"next_node": NODE_SCAN_FOLLOWUP}
 
     # ── Nothing left to do ──────────────────────────────────────────
-    logger.info("  Supervisor → finalize_tool")
-    return {"next_agent": TOOL_FINALIZE}
+    logger.info("  Supervisor → finalize_node")
+    return {"next_node": NODE_FINALIZE}

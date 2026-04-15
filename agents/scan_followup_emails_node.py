@@ -1,5 +1,5 @@
 """
-Scan Follow-up Emails Tool — scans Gmail for reply emails (Re: ...) from
+Scan Follow-up Emails Node — scans Gmail for reply emails (Re: ...) from
 recruiters who were previously contacted. Manages follow-up state tracking.
 """
 
@@ -229,6 +229,6 @@ def scan_followup_emails(state: EmailPipelineState) -> Dict[str, Any]:
         "followup_emails": new_followups,
         "current_followup_index": 0,
         "current_followup": {},
-        "phase2_processed": 0,
+        "followup_processed": 0,
         "followup_scan_done": True,
     }
