@@ -1,4 +1,9 @@
-export type TabKey = "processed" | "conversations" | "apply" | "chat";
+export type TabKey =
+  | "processed"
+  | "conversations"
+  | "apply"
+  | "apply_url"
+  | "paste_jd";
 
 interface Props {
   active: TabKey;
@@ -12,7 +17,8 @@ const TABS: { key: TabKey; label: string; icon: string }[] = [
   { key: "processed",     label: "Processed Emails", icon: "✉" },
   { key: "conversations", label: "Conversations",    icon: "✎" },
   { key: "apply",         label: "Apply History",    icon: "⇢" },
-  { key: "chat",          label: "Chat / Apply URL", icon: "💬" },
+  { key: "apply_url",     label: "Apply from URL",   icon: "🔗" },
+  { key: "paste_jd",      label: "Paste JD",         icon: "💬" },
 ];
 
 export function Sidebar({ active, onChange, pendingCount, processedCount, applyReadyCount }: Props) {

@@ -67,9 +67,12 @@ export default function App() {
     pipeline.start("/ws/apply-from-url", (ws) => {
       ws.send(JSON.stringify({ url }));
     });
-    // Switch the user to the Apply History tab so they see the plan appear.
+    // Switch to Apply History so the user watches the plan land.
     setTab("apply");
   };
+
+  const handleOpenPasteJD = () => setTab("paste_jd");
+  const handleOpenApplyURL = () => setTab("apply_url");
 
   return (
     <div className="app">
@@ -92,7 +95,8 @@ export default function App() {
           selectedModel={selectedModel}
           onModelChange={setSelectedModel}
           onProcessEmails={handleProcessEmails}
-          onOpenChat={() => setTab("chat")}
+          onOpenPasteJD={handleOpenPasteJD}
+          onOpenApplyURL={handleOpenApplyURL}
           onComparePricing={() => setPricingOpen(true)}
           onAddGmail={() => alert("Adding another Gmail account is coming soon.")}
         />
@@ -107,10 +111,10 @@ export default function App() {
           ) : (
             <div className="chat-layout">
               <ChatUI
+                mode={tab === "apply_url" ? "url" : "jd"}
                 running={pipeline.running}
                 onSubmitJD={handleSubmitJD}
                 onSubmitURL={handleSubmitURL}
-                onProcessEmails={handleProcessEmails}
               />
               <ProgressLog
                 events={pipeline.events}
@@ -121,7 +125,8 @@ export default function App() {
           )}
         </div>
 
-        {(pipeline.running || pipeline.events.length > 0) && tab !== "chat" ? (
+        {(pipeline.running || pipeline.events.length > 0) &&
+         tab !== "apply_url" && tab !== "paste_jd" ? (
           <div className="app__progress-dock">
             <ProgressLog
               events={pipeline.events}

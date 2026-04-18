@@ -11,7 +11,8 @@ interface Props {
   selectedHours: number;
   onHoursChange: (v: number) => void;
   onProcessEmails: () => void;
-  onOpenChat: () => void;
+  onOpenPasteJD: () => void;
+  onOpenApplyURL: () => void;
   selectedModel: string;
   onModelChange: (m: string) => void;
   onComparePricing: () => void;
@@ -32,7 +33,7 @@ export function DashboardHeader({
   config, usage, running,
   selectedFolders, onFoldersChange,
   selectedHours, onHoursChange,
-  onProcessEmails, onOpenChat,
+  onProcessEmails, onOpenPasteJD, onOpenApplyURL,
   selectedModel, onModelChange,
   onComparePricing, onAddGmail,
 }: Props) {
@@ -142,7 +143,10 @@ export function DashboardHeader({
 
         <div className="dashboard-header__spacer" />
 
-        <button className="btn btn--ghost" onClick={onOpenChat} disabled={running}>
+        <button className="btn btn--ghost" onClick={onOpenApplyURL} disabled={running}>
+          Apply URL
+        </button>
+        <button className="btn btn--ghost" onClick={onOpenPasteJD} disabled={running}>
           Paste JD
         </button>
         <button className="btn btn--primary" onClick={onProcessEmails} disabled={running}>
