@@ -12,14 +12,14 @@ is unclear, skip it and ask.
 
 ## Contact
 - **Primary email:** pinalmdave@gmail.com
-- **Phone:** +1 (XXX) XXX-XXXX  <!-- fill in -->
+- **Phone:** +1 (732) 351-9730  
 - **Country:** United States
 
 ## Address (for forms that require it)
-- **Street:** <!-- fill in -->
-- **City:** <!-- fill in -->
+- **Street:** 28 Kady Ln
+- **City:** Kendall Park
 - **State:** New Jersey
-- **Postal code:** <!-- fill in -->
+- **Postal code:** 08824
 
 ## Work authorization
 - **Status:** US Green Card (Permanent Resident)
@@ -28,15 +28,15 @@ is unclear, skip it and ask.
 - **Requires visa sponsorship now or in the future:** No
 
 ## Demographics (voluntary / EEO — forms vary)
-- **Date of birth:** <!-- fill in YYYY-MM-DD if a form actually requires it -->
-- **Gender:** Decline to answer (default unless you want to specify)
+- **Date of birth:** 1979-01-18
+- **Gender:** Male
 - **Ethnicity:** Decline to answer
 - **Veteran status:** Not a veteran
 - **Disability status:** Decline to answer
 
 ## Availability
-- **Earliest start date:** 2–3 weeks from offer acceptance (standard notice)
-- **Desired work location:** Remote / Hybrid / Onsite (New Jersey area preferred)
+- **Earliest start date:** 2 weeks from offer acceptance (standard notice)
+- **Desired work location:** Remote / Hybrid / Onsite
 - **Willing to relocate:** Yes, for the right opportunity
 - **Willing to travel (%):** Up to 25%
 
