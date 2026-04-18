@@ -63,7 +63,9 @@ class UsageBucket:
         }
 
 
-_lock = threading.Lock()
+# RLock — record_usage and reset_session call get_snapshot() while holding
+# the lock; a non-reentrant Lock would deadlock on the second acquire.
+_lock = threading.RLock()
 _session = UsageBucket()
 _total = UsageBucket()
 
