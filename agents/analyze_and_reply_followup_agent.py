@@ -23,6 +23,7 @@ from config import (
     PROMPTS_DIR,
 )
 from graph.state import EmailPipelineState
+from knowledge_base import system_prompt_with_knowledge
 from usage_tracker import record_usage
 
 logger = logging.getLogger(__name__)
@@ -37,11 +38,18 @@ FOLLOWUP_LABEL = "AUTO_REPLY_CLAUDE"
 
 def _generate_followup_reply(email_data: Dict[str, Any]) -> Dict[str, Any]:
     """Use Claude to analyze recruiter follow-up and generate a smart reply."""
-    system_prompt = FOLLOWUP_PROMPT_PATH.read_text(encoding="utf-8")
+    system_prompt = system_prompt_with_knowledge(
+        FOLLOWUP_PROMPT_PATH.read_text(encoding="utf-8")
+    )
 
     llm = ChatAnthropic(model=CLAUDE_MODEL, max_tokens=2048)
+    # Static system prompt + knowledge — cache via ephemeral cache_control.
     response = llm.invoke([
-        SystemMessage(content=system_prompt),
+        SystemMessage(content=[{
+            "type": "text",
+            "text": system_prompt,
+            "cache_control": {"type": "ephemeral"},
+        }]),
         HumanMessage(content=json.dumps(email_data, ensure_ascii=False)),
     ])
     record_usage(response)

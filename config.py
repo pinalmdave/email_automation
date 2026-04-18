@@ -39,6 +39,7 @@ TEMPLATES_DIR = BASE_DIR / "templates"
 RESUME_TEMPLATE_PATH = TEMPLATES_DIR / "resume_template.docx"
 PROMPTS_DIR = BASE_DIR / "prompts"
 RESUME_PROMPT_PATH = PROMPTS_DIR / "resume_prompt.txt"
+KNOWLEDGE_DIR = BASE_DIR / "knowledge"
 
 RESUME_OUTPUT_DIR = Path(
     os.getenv("RESUME_OUTPUT_DIR", str(Path.home() / "OneDrive" / "Desktop" / "CLAUDE_GENERATED_RESUME"))

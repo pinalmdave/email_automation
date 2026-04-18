@@ -21,6 +21,7 @@ from config import (
     RESUME_TEMPLATE_PATH,
 )
 from graph.state import EmailPipelineState
+from knowledge_base import system_prompt_with_knowledge
 from usage_tracker import record_usage
 
 logger = logging.getLogger(__name__)
@@ -53,11 +54,20 @@ def _extract_json_from_text(text: str) -> Dict[str, Any]:
 
 def _generate_resume_json(email_data: Dict[str, Any]) -> Dict[str, Any]:
     """Send recruiter email to Claude and get back structured resume JSON."""
-    system_prompt = RESUME_PROMPT_PATH.read_text(encoding="utf-8")
+    system_prompt = system_prompt_with_knowledge(
+        RESUME_PROMPT_PATH.read_text(encoding="utf-8")
+    )
 
     llm = ChatAnthropic(model=CLAUDE_MODEL, max_tokens=4096)
+    # The system prompt + knowledge base is static across calls — mark it
+    # with ephemeral cache_control so Anthropic caches the full block and
+    # subsequent calls within 5 minutes pay ~10% of normal input rate.
     response = llm.invoke([
-        SystemMessage(content=system_prompt),
+        SystemMessage(content=[{
+            "type": "text",
+            "text": system_prompt,
+            "cache_control": {"type": "ephemeral"},
+        }]),
         HumanMessage(content=json.dumps(email_data, ensure_ascii=False)),
     ])
     record_usage(response)
