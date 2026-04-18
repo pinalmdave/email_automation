@@ -22,11 +22,16 @@ from typing import Any, Dict
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 
+from blob_storage import bootstrap_state_from_blob, generate_resume_sas_url
 from config import RESUME_OUTPUT_DIR
 from graph import compile_graph
 from usage_tracker import get_snapshot, reset_session
+
+# Pull any persisted state (processed emails, follow-up state, usage totals)
+# from Azure Blob before the graph is compiled, so nodes see durable state.
+bootstrap_state_from_blob()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -252,9 +257,17 @@ def usage() -> Dict[str, Any]:
 
 @app.get("/api/resume/{filename}")
 def download_resume(filename: str):
-    """Serve a generated resume DOCX from the output directory."""
-    # Guard against path traversal.
-    safe_name = Path(filename).name
+    """Serve a generated resume DOCX.
+
+    When Azure Blob is configured we 302-redirect to a short-lived SAS URL so
+    the file survives Web App restarts. Otherwise we stream from local disk.
+    """
+    safe_name = Path(filename).name  # strip any path traversal
+
+    sas_url = generate_resume_sas_url(safe_name)
+    if sas_url:
+        return RedirectResponse(url=sas_url, status_code=302)
+
     path = RESUME_OUTPUT_DIR / safe_name
     if not path.exists() or not path.is_file():
         raise HTTPException(status_code=404, detail="Resume not found")

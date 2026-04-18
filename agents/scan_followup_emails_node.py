@@ -43,6 +43,11 @@ def _load_followup_state() -> Dict:
 
 def _save_followup_state(state: Dict) -> None:
     FOLLOWUP_STATE_PATH.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
+    try:
+        from blob_storage import upload_state_file
+        upload_state_file(FOLLOWUP_STATE_PATH)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Blob sync of followup_state skipped: %s", exc)
 
 
 def is_followup_processed(message_id: str) -> bool:

@@ -184,6 +184,11 @@ def _mark_processed(message_id: str, subject: str, from_email: str, resume_file:
         "resume_file": resume_file,
     }
     STATE_FILE_PATH.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
+    try:
+        from blob_storage import upload_state_file
+        upload_state_file(STATE_FILE_PATH)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Blob sync of processed_emails skipped: %s", exc)
     logger.info("Marked as processed: %s", message_id)
 
 

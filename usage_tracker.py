@@ -106,7 +106,21 @@ def _save_totals() -> None:
         )
     except OSError as exc:
         logger.warning("Could not persist usage totals: %s", exc)
+        return
+    try:
+        from blob_storage import upload_state_file
+        upload_state_file(USAGE_TOTALS_PATH)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Blob sync of usage totals skipped: %s", exc)
 
+
+# Pull persisted totals from blob (if configured) before reading locally.
+try:
+    from blob_storage import download_state_file as _dl_state
+    if not USAGE_TOTALS_PATH.exists():
+        _dl_state(USAGE_TOTALS_PATH)
+except Exception:  # noqa: BLE001
+    pass
 
 _load_totals()
 

@@ -3,6 +3,8 @@ __pycache__/
 *.pyc
 processed_emails.json
 followup_state.json
+usage_totals.json
+frontend/tsconfig.tsbuildinfo
 node_modules/
 frontend/dist/
 frontend/node_modules/
