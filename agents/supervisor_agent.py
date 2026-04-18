@@ -25,6 +25,7 @@ AGENT_GENERATE_RESUME = "generate_resume_agent"
 NODE_RENDER_DRAFT     = "render_and_draft_node"
 NODE_SCAN_FOLLOWUP    = "scan_followup_emails_node"
 AGENT_ANALYZE_REPLY   = "analyze_and_reply_followup_agent"
+NODE_PROCESS_JD       = "process_job_description_node"
 NODE_FINALIZE         = "finalize_node"
 
 
@@ -32,28 +33,36 @@ def supervisor(state: EmailPipelineState) -> Dict[str, Any]:
     """
     Examine pipeline state and decide the next agent to invoke.
 
-    When the next step requires picking an item from a scanned list,
-    the supervisor loads it into current_email / current_followup
-    directly — no separate pick-next node needed.
-
     Decision logic (evaluated top-to-bottom, first match wins):
 
-    1. If a recruiter email is loaded and has a resume ready → render_and_draft
-    2. If a recruiter email is loaded but no resume yet     → generate_resume
-    3. If recruiter scan done & unprocessed emails remain    → load next email, → generate_resume
-    4. If recruiter emails not scanned yet & enabled         → scan_recruiter_emails
-    5. If a follow-up is loaded                              → analyze_and_reply
-    6. If followup scan done & unprocessed followups remain   → load next followup, → analyze_and_reply
-    7. If followup emails not scanned yet & enabled          → scan_followup_emails
-    8. Otherwise                                             → finalize
+    1. If a manual JD is pending (text set, not yet processed) → process_job_description
+    2. If a recruiter email is loaded and has a resume ready  → render_and_draft
+       (manual-JD flow skips drafting — goes straight to finalize)
+    3. If a recruiter email is loaded but no resume yet      → generate_resume
+    4. If recruiter scan done & unprocessed emails remain    → load next, → generate_resume
+    5. If recruiter scan not done & enabled                  → scan_recruiter_emails
+    6. If a follow-up is loaded                              → analyze_and_reply
+    7. If followup scan done & unprocessed followups remain  → load next, → analyze_and_reply
+    8. If followup scan not done & enabled                   → scan_followup_emails
+    9. Otherwise                                             → finalize
     """
 
-    # ── Recruiter email processing ──────────────────────────────────
+    # ── Manual job description (UI paste) ───────────────────────────
+    jd_text = (state.get("job_description_text") or "").strip()
+    if jd_text and not state.get("job_description_done", False):
+        logger.info("  Supervisor → process_job_description_node")
+        return {"next_node": NODE_PROCESS_JD}
+
+    # ── Recruiter / JD email processing ─────────────────────────────
     current_email = state.get("current_email", {})
     if current_email:
         resume_path = state.get("resume_path", "")
         resume_json = state.get("resume_json", {})
         if resume_path and resume_json:
+            # Manual-JD flow has no recruiter to reply to — skip drafting.
+            if jd_text:
+                logger.info("  Supervisor → finalize_node (manual JD, skip draft)")
+                return {"next_node": NODE_FINALIZE}
             logger.info("  Supervisor → render_and_draft_node")
             return {"next_node": NODE_RENDER_DRAFT}
         else:

@@ -21,6 +21,7 @@ from config import (
     RESUME_TEMPLATE_PATH,
 )
 from graph.state import EmailPipelineState
+from usage_tracker import record_usage
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,7 @@ def _generate_resume_json(email_data: Dict[str, Any]) -> Dict[str, Any]:
         SystemMessage(content=system_prompt),
         HumanMessage(content=json.dumps(email_data, ensure_ascii=False)),
     ])
+    record_usage(response)
 
     raw_text = response.content
     resume_json = _extract_json_from_text(raw_text)

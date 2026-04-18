@@ -20,6 +20,10 @@ class EmailPipelineState(TypedDict):
     recruiter_scan_done: bool
     followup_scan_done: bool
 
+    # -- Manual job description (pasted via UI) --
+    job_description_text: str
+    job_description_done: bool
+
     # -- Recruiter email processing --
     scanned_emails: List[Dict[str, Any]]
     current_email_index: int

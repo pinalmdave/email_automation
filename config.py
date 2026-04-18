@@ -27,8 +27,12 @@ SCAN_FOLDERS = tuple(
 )
 MAX_EMAIL_AGE_HOURS = int(os.getenv("MAX_EMAIL_AGE_HOURS", "24"))
 
-# === Scheduling ===
-SCAN_INTERVAL_SECONDS = int(os.getenv("SCAN_INTERVAL_SECONDS", "3600"))
+# === Claude API pricing (USD per 1M tokens) — overridable via .env ===
+# Defaults are for claude-sonnet-4 as of this repo's current CLAUDE_MODEL.
+CLAUDE_INPUT_COST_PER_MTOK = float(os.getenv("CLAUDE_INPUT_COST_PER_MTOK", "3.00"))
+CLAUDE_OUTPUT_COST_PER_MTOK = float(os.getenv("CLAUDE_OUTPUT_COST_PER_MTOK", "15.00"))
+CLAUDE_CACHE_WRITE_COST_PER_MTOK = float(os.getenv("CLAUDE_CACHE_WRITE_COST_PER_MTOK", "3.75"))
+CLAUDE_CACHE_READ_COST_PER_MTOK = float(os.getenv("CLAUDE_CACHE_READ_COST_PER_MTOK", "0.30"))
 
 # === Paths ===
 TEMPLATES_DIR = BASE_DIR / "templates"
@@ -49,3 +53,4 @@ except OSError:
 
 STATE_FILE_PATH = BASE_DIR / "processed_emails.json"
 FOLLOWUP_STATE_PATH = BASE_DIR / "followup_state.json"
+USAGE_TOTALS_PATH = BASE_DIR / "usage_totals.json"

@@ -23,6 +23,7 @@ from config import (
     PROMPTS_DIR,
 )
 from graph.state import EmailPipelineState
+from usage_tracker import record_usage
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,7 @@ def _generate_followup_reply(email_data: Dict[str, Any]) -> Dict[str, Any]:
         SystemMessage(content=system_prompt),
         HumanMessage(content=json.dumps(email_data, ensure_ascii=False)),
     ])
+    record_usage(response)
 
     raw_text = response.content.strip()
     # Strip markdown fences
