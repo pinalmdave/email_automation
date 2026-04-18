@@ -1,24 +1,55 @@
 import { useEffect, useState } from "react";
+import { fetchConfig, fetchConversations, fetchProcessedEmails, fetchUsage } from "./api";
 import { ChatUI } from "./components/ChatUI";
+import { Conversations } from "./components/Conversations";
+import { DashboardHeader } from "./components/DashboardHeader";
+import { PricingModal } from "./components/PricingModal";
+import { ProcessedEmails } from "./components/ProcessedEmails";
 import { ProgressLog } from "./components/ProgressLog";
-import { UsagePanel } from "./components/UsagePanel";
+import { Sidebar, type TabKey } from "./components/Sidebar";
 import { usePipelineWS } from "./hooks/usePipelineWS";
-import type { UsageSnapshot } from "./types";
+import type { AppConfig, UsageSnapshot } from "./types";
 
 export default function App() {
+  const [config, setConfig] = useState<AppConfig | null>(null);
   const [initialUsage, setInitialUsage] = useState<UsageSnapshot | null>(null);
+  const [tab, setTab] = useState<TabKey>("processed");
+  const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
+  const [selectedHours, setSelectedHours] = useState<number>(24);
+  const [selectedModel, setSelectedModel] = useState<string>("claude-sonnet-4-20250514");
+  const [pricingOpen, setPricingOpen] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [processedCount, setProcessedCount] = useState(0);
+  const [pendingCount, setPendingCount] = useState(0);
   const pipeline = usePipelineWS(initialUsage);
 
   useEffect(() => {
-    const apiBase = (import.meta as any).env?.VITE_API_BASE_URL ?? "";
-    fetch(`${apiBase}/api/usage`)
-      .then((r) => r.json())
-      .then((u: UsageSnapshot) => setInitialUsage(u))
-      .catch(() => { /* backend might not be up yet */ });
+    fetchConfig().then((c) => {
+      setConfig(c);
+      setSelectedHours(c.default_hours || 24);
+    }).catch(() => { /* backend may not be up */ });
+    fetchUsage().then(setInitialUsage).catch(() => { /* same */ });
   }, []);
 
+  useEffect(() => {
+    fetchProcessedEmails().then((items) => setProcessedCount(items.length)).catch(() => {});
+    fetchConversations("pending").then((items) => setPendingCount(items.length)).catch(() => {});
+  }, [reloadKey]);
+
+  // Refresh lists whenever the pipeline finishes a run.
+  useEffect(() => {
+    if (!pipeline.running && pipeline.events.some((e) => e.event === "done")) {
+      setReloadKey((k) => k + 1);
+    }
+  }, [pipeline.running, pipeline.events]);
+
   const handleProcessEmails = () => {
-    pipeline.start("/ws/process-emails");
+    pipeline.start("/ws/process-emails", (ws) => {
+      const payload: Record<string, unknown> = {};
+      if (selectedFolders.length > 0) payload.folders = selectedFolders;
+      if (selectedHours > 0) payload.hours = selectedHours;
+      ws.send(JSON.stringify(payload));
+    });
   };
 
   const handleSubmitJD = (jd: string) => {
@@ -29,27 +60,62 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="app__header">
-        <div className="app__title">Claude Smart Email App</div>
-        <UsagePanel usage={pipeline.usage ?? initialUsage} />
-      </header>
+      <Sidebar
+        active={tab}
+        onChange={setTab}
+        pendingCount={pendingCount}
+        processedCount={processedCount}
+      />
+      <div className="app__main">
+        <DashboardHeader
+          config={config}
+          usage={pipeline.usage ?? initialUsage}
+          running={pipeline.running}
+          selectedFolders={selectedFolders}
+          onFoldersChange={setSelectedFolders}
+          selectedHours={selectedHours}
+          onHoursChange={setSelectedHours}
+          selectedModel={selectedModel}
+          onModelChange={setSelectedModel}
+          onProcessEmails={handleProcessEmails}
+          onOpenChat={() => setTab("chat")}
+          onComparePricing={() => setPricingOpen(true)}
+          onAddGmail={() => alert("Adding another Gmail account is coming soon.")}
+        />
 
-      <main className="app__main">
-        <section className="app__pane">
-          <ChatUI
-            running={pipeline.running}
-            onSubmit={handleSubmitJD}
-            onProcessEmails={handleProcessEmails}
-          />
-        </section>
-        <section className="app__pane">
-          <ProgressLog
-            events={pipeline.events}
-            running={pipeline.running}
-            error={pipeline.error}
-          />
-        </section>
-      </main>
+        <div className="app__content">
+          {tab === "processed" ? (
+            <ProcessedEmails reloadKey={reloadKey} />
+          ) : tab === "conversations" ? (
+            <Conversations reloadKey={reloadKey} onChange={() => setReloadKey((k) => k + 1)} />
+          ) : (
+            <div className="chat-layout">
+              <ChatUI
+                running={pipeline.running}
+                onSubmit={handleSubmitJD}
+                onProcessEmails={handleProcessEmails}
+              />
+              <ProgressLog
+                events={pipeline.events}
+                running={pipeline.running}
+                error={pipeline.error}
+              />
+            </div>
+          )}
+        </div>
+
+        {(pipeline.running || pipeline.events.length > 0) && tab !== "chat" ? (
+          <div className="app__progress-dock">
+            <ProgressLog
+              events={pipeline.events}
+              running={pipeline.running}
+              error={pipeline.error}
+            />
+          </div>
+        ) : null}
+      </div>
+
+      <PricingModal open={pricingOpen} onClose={() => setPricingOpen(false)} />
     </div>
   );
 }

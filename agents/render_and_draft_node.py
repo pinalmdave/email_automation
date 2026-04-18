@@ -1,32 +1,25 @@
 """
-Render and Draft Node — creates a Gmail draft reply to a recruiter email
-with the generated resume attached. Draft is appended to [Gmail]/Drafts
-via IMAP — NOT sent automatically.
+Render and Queue Node — builds the recruiter reply (body + resume
+attachment) and persists it as a pending reply for human review.
+
+This replaces the previous "auto-append to Gmail Drafts" behavior: the
+UI now lists pending replies and the user approves/edits/cancels each
+one before any SMTP send. The original email is still marked as
+processed so it isn't re-scanned on the next run.
 """
 
-import imaplib
 import json
 import logging
 import re
 from datetime import datetime, timezone
-from email.mime.application import MIMEApplication
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from pathlib import Path
 from typing import Any, Dict
 
-from config import (
-    IMAP_HOST,
-    IMAP_PASSWORD,
-    IMAP_PORT,
-    IMAP_USER,
-    STATE_FILE_PATH,
-)
+from config import STATE_FILE_PATH
 from graph.state import EmailPipelineState
+from pending_replies import create as create_pending_reply
 
 logger = logging.getLogger(__name__)
-
-AUTO_REPLY_LABEL = "AUTO_APPLY_CLAUDE"
 
 REPLY_BODY_TEMPLATE = """Hi {sender_first_name},
 
@@ -43,14 +36,12 @@ REPLY_BODY_TEMPLATE = """Hi {sender_first_name},
 
 
 # ---------------------------------------------------------------------------
-# Draft creation helpers
+# Reply body construction
 # ---------------------------------------------------------------------------
 
-def _get_recipient_address(from_email: str) -> str:
+def _recipient_address(from_email: str) -> str:
     match = re.search(r"<([^>]+)>", from_email)
-    if match:
-        return match.group(1).strip()
-    return from_email.strip()
+    return match.group(1).strip() if match else from_email.strip()
 
 
 def _extract_sender_name(from_email: str, resume_json: Dict[str, Any]) -> str:
@@ -80,99 +71,42 @@ def _format_quoted_chain(email_date: str, from_email: str, raw_email_body: str) 
     return f"\n\n{header}\n{quoted_lines}"
 
 
-def _create_draft_reply(
+def _build_reply(
     email_data: Dict[str, Any],
     resume_json: Dict[str, Any],
-    resume_path: Path,
-) -> None:
-    """Create a Gmail draft replying to the recruiter with the resume attached."""
-    if not IMAP_USER or not IMAP_PASSWORD:
-        raise RuntimeError("IMAP_USER and IMAP_PASSWORD must be set in .env")
-
-    if not resume_path.exists():
-        raise FileNotFoundError(f"Resume file not found: {resume_path}")
-
+) -> Dict[str, str]:
     from_email = email_data.get("from_email", "")
-    to_email = _get_recipient_address(from_email)
+    to_email = _recipient_address(from_email)
     subject = email_data.get("subject", "")
     reply_subject = f"Re: {subject}" if subject and not subject.strip().lower().startswith("re:") else subject
 
     sender_name = _extract_sender_name(from_email, resume_json)
-    sender_first_name = sender_name.split()[0] if sender_name and sender_name != "there" else ""
-    greeting_name = sender_first_name if sender_first_name else ""
-    reply_text = REPLY_BODY_TEMPLATE.replace("{sender_first_name}", greeting_name)
-    quoted_chain = _format_quoted_chain(
+    first_name = sender_name.split()[0] if sender_name and sender_name != "there" else ""
+    greeting = first_name if first_name else ""
+    reply_text = REPLY_BODY_TEMPLATE.replace("{sender_first_name}", greeting)
+    quoted = _format_quoted_chain(
         email_data.get("date", ""),
         from_email,
         email_data.get("raw_email_body", ""),
     )
-    body = reply_text + quoted_chain
-
-    # Construct MIME message
-    msg = MIMEMultipart()
-    msg["From"] = IMAP_USER
-    msg["To"] = to_email
-    msg["Subject"] = reply_subject
-    msg.attach(MIMEText(body, "plain", "utf-8"))
-
-    # Attach resume
-    resume_filename = resume_path.name
-    with open(resume_path, "rb") as f:
-        attachment = MIMEApplication(
-            f.read(),
-            _subtype="vnd.openxmlformats-officedocument.wordprocessingml.document",
-        )
-    attachment.add_header("Content-Disposition", "attachment", filename=resume_filename)
-    msg.attach(attachment)
-
-    # Append to Gmail Drafts
-    raw = msg.as_string().encode("utf-8")
-    mail = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT)
-    mail.login(IMAP_USER, IMAP_PASSWORD)
-
-    drafts_folder = "[Gmail]/Drafts"
-    try:
-        status, data = mail.append(drafts_folder, "\\Draft", None, raw)
-    except Exception:
-        drafts_folder = "Drafts"
-        status, data = mail.append(drafts_folder, "\\Draft", None, raw)
-
-    # Copy to AUTO_REPLY label for tracking
-    if status == "OK" and data:
-        resp = data[0].decode() if isinstance(data[0], bytes) else str(data[0])
-        match = re.search(r"APPENDUID\s+\d+\s+(\d+)", resp)
-        if match:
-            uid = match.group(1)
-            mail.select(drafts_folder, readonly=False)
-            try:
-                mail.copy(uid, AUTO_REPLY_LABEL)
-            except Exception:
-                pass
-
-    # Mark the original email as read and apply AUTO_APPLY_CLAUDE label
-    original_folder = email_data.get("folder", "INBOX")
-    original_uid = email_data.get("imap_uid", "")
-    if original_uid:
-        try:
-            mail.select(original_folder, readonly=False)
-            mail.store(original_uid.encode() if isinstance(original_uid, str) else original_uid, "+FLAGS", "\\Seen")
-            try:
-                mail.copy(original_uid.encode() if isinstance(original_uid, str) else original_uid, AUTO_REPLY_LABEL)
-            except Exception:
-                logger.warning("Could not apply label %s — create it in Gmail first", AUTO_REPLY_LABEL)
-        except Exception as e:
-            logger.warning("Could not mark original email as read: %s", e)
-
-    mail.logout()
-    logger.info("Draft created for: %s -> %s (%s)", to_email, reply_subject, resume_filename)
+    return {
+        "to": to_email,
+        "subject": reply_subject,
+        "body": reply_text + quoted,
+    }
 
 
 # ---------------------------------------------------------------------------
-# Agent node function
+# Processed-email ledger (dedup across scans)
 # ---------------------------------------------------------------------------
 
-def _mark_processed(message_id: str, subject: str, from_email: str, resume_file: str) -> None:
-    """Persist a processed email to disk so it won't be reprocessed next run."""
+def _mark_processed(
+    message_id: str,
+    subject: str,
+    from_email: str,
+    resume_file: str,
+    pending_id: str,
+) -> None:
     try:
         state = json.loads(STATE_FILE_PATH.read_text(encoding="utf-8")) if STATE_FILE_PATH.exists() else {}
     except (json.JSONDecodeError, OSError):
@@ -182,6 +116,8 @@ def _mark_processed(message_id: str, subject: str, from_email: str, resume_file:
         "subject": subject,
         "from_email": from_email,
         "resume_file": resume_file,
+        "pending_reply_id": pending_id,
+        "status": "pending_review",
     }
     STATE_FILE_PATH.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
     try:
@@ -189,11 +125,15 @@ def _mark_processed(message_id: str, subject: str, from_email: str, resume_file:
         upload_state_file(STATE_FILE_PATH)
     except Exception as exc:  # noqa: BLE001
         logger.debug("Blob sync of processed_emails skipped: %s", exc)
-    logger.info("Marked as processed: %s", message_id)
+    logger.info("Marked as processed (pending review): %s", message_id)
 
+
+# ---------------------------------------------------------------------------
+# Node function — HITL: persist pending instead of drafting
+# ---------------------------------------------------------------------------
 
 def render_and_draft(state: EmailPipelineState) -> Dict[str, Any]:
-    """Create a Gmail draft with the resume attached and mark the email processed."""
+    """Build recruiter reply + queue it for human review (no Gmail draft)."""
     email_data = state["current_email"]
     resume_json = state.get("resume_json", {})
     resume_path_str = state.get("resume_path", "")
@@ -214,17 +154,33 @@ def render_and_draft(state: EmailPipelineState) -> Dict[str, Any]:
     from_email = email_data.get("from_email", "")
 
     try:
-        logger.info("  Creating Gmail draft...")
-        _create_draft_reply(email_data, resume_json, resume_path)
-        _mark_processed(message_id, subject, from_email, str(resume_path))
-        logger.info("  Done! Resume: %s", resume_path.name)
+        reply = _build_reply(email_data, resume_json)
+        pending = create_pending_reply(
+            kind="recruiter_initial",
+            original_message_id=message_id,
+            original_from=from_email,
+            original_subject=subject,
+            original_date=email_data.get("date", ""),
+            original_imap_uid=email_data.get("imap_uid", ""),
+            original_folder=email_data.get("folder", "INBOX"),
+            reply_to=reply["to"],
+            reply_subject=reply["subject"],
+            reply_body=reply["body"],
+            resume_path=str(resume_path),
+            extra={
+                "resume_filename": resume_path.name,
+                "staffing_company_name": resume_json.get("staffing_company_name", ""),
+                "target_role_title": resume_json.get("target_role_title", ""),
+            },
+        )
+        _mark_processed(message_id, subject, from_email, str(resume_path), pending["id"])
+        logger.info("  Queued pending reply for review: %s (resume=%s)", pending["id"], resume_path.name)
         return {
             "current_email_index": idx + 1,
             "current_email": {},
             "resume_json": {},
             "resume_path": "",
             "recruiter_processed": processed + 1,
-            # Reset evaluator-optimizer loop state for the next email.
             "resume_iterations": 0,
             "resume_feedback": "",
             "resume_evaluation_done": False,
@@ -232,7 +188,7 @@ def render_and_draft(state: EmailPipelineState) -> Dict[str, Any]:
             "resume_evaluation_score": 0.0,
         }
     except Exception as e:
-        logger.error("  FAILED to draft for '%s': %s", subject, e, exc_info=True)
+        logger.error("  FAILED to queue pending for '%s': %s", subject, e, exc_info=True)
         return {
             "current_email_index": idx + 1,
             "current_email": {},
@@ -243,5 +199,5 @@ def render_and_draft(state: EmailPipelineState) -> Dict[str, Any]:
             "resume_evaluation_done": False,
             "resume_evaluation_accepted": False,
             "resume_evaluation_score": 0.0,
-            "errors": [f"Draft creation failed for '{subject}': {e}"],
+            "errors": [f"Pending-reply queue failed for '{subject}': {e}"],
         }

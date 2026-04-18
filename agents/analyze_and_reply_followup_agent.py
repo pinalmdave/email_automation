@@ -1,27 +1,19 @@
 """
-Analyze and Reply Follow-up Agent — uses Claude AI to understand recruiter
-intent and generate an intelligent reply draft via Gmail IMAP.
+Analyze and Reply Follow-up Agent — uses Claude to classify recruiter
+follow-up intent and draft a reply body. The reply is queued as a
+pending item for human review (Conversations tab); the actual SMTP
+send happens when the user approves from the UI.
 """
 
-import imaplib
 import json
 import logging
 import re
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from typing import Any, Dict
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from config import (
-    CLAUDE_MODEL,
-    IMAP_HOST,
-    IMAP_PASSWORD,
-    IMAP_PORT,
-    IMAP_USER,
-    PROMPTS_DIR,
-)
+from config import CLAUDE_MODEL, PROMPTS_DIR
 from graph.state import EmailPipelineState
 from knowledge_base import system_prompt_with_knowledge
 from usage_tracker import record_usage
@@ -29,7 +21,6 @@ from usage_tracker import record_usage
 logger = logging.getLogger(__name__)
 
 FOLLOWUP_PROMPT_PATH = PROMPTS_DIR / "followup_prompt.txt"
-FOLLOWUP_LABEL = "AUTO_REPLY_CLAUDE"
 
 
 # ---------------------------------------------------------------------------
@@ -79,103 +70,44 @@ def _generate_followup_reply(email_data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Draft creation for follow-up replies
+# Reply construction for follow-ups (body + subject only — no MIME/draft here)
 # ---------------------------------------------------------------------------
 
-def _create_followup_draft(
+def _build_followup_reply(
     email_data: Dict[str, Any],
     reply_result: Dict[str, Any],
-) -> None:
-    """Create a Gmail draft for the follow-up reply."""
-    if not IMAP_USER or not IMAP_PASSWORD:
-        raise RuntimeError("IMAP_USER and IMAP_PASSWORD must be set in .env")
-
+) -> Dict[str, str]:
     from_email = email_data.get("from_email", "")
     match = re.search(r"<([^>]+)>", from_email)
     to_email = match.group(1).strip() if match else from_email.strip()
 
     subject = email_data.get("subject", "")
     reply_subject = subject if subject.lower().startswith("re:") else f"Re: {subject}"
-
     reply_body = reply_result.get("reply_body", "")
 
-    # Append quoted original
     email_date = email_data.get("date", "")
     raw_body = email_data.get("raw_email_body", "")
     if raw_body:
         date_part = email_date.strip() if email_date else ""
         sender_part = from_email.strip()
-        if date_part:
-            quoted_header = f"\n\nOn {date_part}, {sender_part} wrote:"
-        else:
-            quoted_header = f"\n\nOn {sender_part} wrote:"
+        header = f"\n\nOn {date_part}, {sender_part} wrote:" if date_part else f"\n\nOn {sender_part} wrote:"
         body_lines = raw_body.strip().splitlines()
         quoted = "\n".join("> " + line if line.strip() else ">" for line in body_lines)
-        full_body = reply_body + quoted_header + "\n" + quoted
+        full_body = reply_body + header + "\n" + quoted
     else:
         full_body = reply_body
 
-    # Build MIME
-    msg = MIMEMultipart()
-    msg["From"] = IMAP_USER
-    msg["To"] = to_email
-    msg["Subject"] = reply_subject
-    msg.attach(MIMEText(full_body, "plain", "utf-8"))
-
-    raw = msg.as_string().encode("utf-8")
-    mail = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT)
-    mail.login(IMAP_USER, IMAP_PASSWORD)
-
-    drafts_folder = "[Gmail]/Drafts"
-    try:
-        status, data = mail.append(drafts_folder, "\\Draft", None, raw)
-    except Exception:
-        drafts_folder = "Drafts"
-        status, data = mail.append(drafts_folder, "\\Draft", None, raw)
-
-    # Apply follow-up label
-    if status == "OK" and data:
-        resp = data[0].decode() if isinstance(data[0], bytes) else str(data[0])
-        uid_match = re.search(r"APPENDUID\s+\d+\s+(\d+)", resp)
-        if uid_match:
-            uid = uid_match.group(1)
-            mail.select(drafts_folder, readonly=False)
-            try:
-                mail.copy(uid, FOLLOWUP_LABEL)
-            except Exception:
-                pass
-
-    # Mark original email as read
-    original_folder = email_data.get("folder", "INBOX")
-    original_uid = email_data.get("imap_uid", "")
-    if original_uid:
-        try:
-            mail.select(original_folder, readonly=False)
-            uid_bytes = original_uid.encode() if isinstance(original_uid, str) else original_uid
-            mail.store(uid_bytes, "+FLAGS", "\\Seen")
-            try:
-                mail.copy(uid_bytes, FOLLOWUP_LABEL)
-            except Exception:
-                pass
-        except Exception as e:
-            logger.warning("Could not mark follow-up email as read: %s", e)
-
-    mail.logout()
-    logger.info(
-        "Follow-up draft created for: %s [%s] -> %s",
-        to_email,
-        reply_result.get("intent", "?"),
-        reply_subject,
-    )
+    return {"to": to_email, "subject": reply_subject, "body": full_body}
 
 
 # ---------------------------------------------------------------------------
-# Agent node function
+# Agent node function — HITL: queue pending instead of drafting
 # ---------------------------------------------------------------------------
 
 def analyze_and_reply_followup(state: EmailPipelineState) -> Dict[str, Any]:
-    """Analyze follow-up intent with Claude and create a reply draft."""
+    """Analyze follow-up intent with Claude and queue a pending reply."""
     from agents.scan_followup_emails_node import mark_followup_processed
+    from pending_replies import create as create_pending_reply
 
     followup = state["current_followup"]
     idx = state.get("current_followup_index", 0)
@@ -185,7 +117,23 @@ def analyze_and_reply_followup(state: EmailPipelineState) -> Dict[str, Any]:
 
     try:
         reply_result = _generate_followup_reply(followup)
-        _create_followup_draft(followup, reply_result)
+        reply = _build_followup_reply(followup, reply_result)
+        pending = create_pending_reply(
+            kind="followup",
+            original_message_id=message_id,
+            original_from=followup.get("from_email", ""),
+            original_subject=subject,
+            original_date=followup.get("date", ""),
+            original_imap_uid=followup.get("imap_uid", ""),
+            original_folder=followup.get("folder", "INBOX"),
+            reply_to=reply["to"],
+            reply_subject=reply["subject"],
+            reply_body=reply["body"],
+            intent=reply_result.get("intent", "UNKNOWN"),
+            extra={"intent_confidence": reply_result.get("confidence", 0.0)},
+        )
+        logger.info("  Queued follow-up pending reply: id=%s intent=%s",
+                    pending["id"], reply_result.get("intent"))
         mark_followup_processed(
             message_id,
             reply_result.get("intent", "UNKNOWN"),

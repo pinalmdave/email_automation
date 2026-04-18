@@ -99,7 +99,7 @@ def _email_passes_subject(subject: str) -> bool:
     return any(kw in subject_lower for kw in role_keywords)
 
 
-def _email_passes_date(date_str: str) -> bool:
+def _email_passes_date(date_str: str, hours_window: int = MAX_EMAIL_AGE_HOURS) -> bool:
     if not date_str:
         return False
     try:
@@ -107,7 +107,7 @@ def _email_passes_date(date_str: str) -> bool:
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         now = datetime.now(timezone.utc)
-        return (now - dt).total_seconds() <= MAX_EMAIL_AGE_HOURS * 3600
+        return (now - dt).total_seconds() <= hours_window * 3600
     except Exception:
         return False
 
@@ -134,7 +134,9 @@ def _extract_body(msg: email.message.Message) -> str:
     return ""
 
 
-def _fetch_and_parse(mail: imaplib.IMAP4_SSL, uid: bytes, folder: str) -> Dict[str, Any] | None:
+def _fetch_and_parse(
+    mail: imaplib.IMAP4_SSL, uid: bytes, folder: str, hours_window: int,
+) -> Dict[str, Any] | None:
     _, data = mail.fetch(uid, "(RFC822)")
     if not data or not data[0]:
         return None
@@ -150,7 +152,7 @@ def _fetch_and_parse(mail: imaplib.IMAP4_SSL, uid: bytes, folder: str) -> Dict[s
         return None
     if not _email_passes_subject(subject):
         return None
-    if not _email_passes_date(date_str):
+    if not _email_passes_date(date_str, hours_window):
         return None
 
     body = _extract_body(msg)
@@ -171,7 +173,9 @@ def _fetch_and_parse(mail: imaplib.IMAP4_SSL, uid: bytes, folder: str) -> Dict[s
     }
 
 
-def _search_folder(mail: imaplib.IMAP4_SSL, folder: str, since_criteria: str) -> List[Dict[str, Any]]:
+def _search_folder(
+    mail: imaplib.IMAP4_SSL, folder: str, since_criteria: str, hours_window: int,
+) -> List[Dict[str, Any]]:
     try:
         status, _ = mail.select(folder, readonly=True)
     except Exception:
@@ -183,21 +187,31 @@ def _search_folder(mail: imaplib.IMAP4_SSL, folder: str, since_criteria: str) ->
     msg_ids = message_numbers[0].split()
     results = []
     for uid in msg_ids:
-        parsed = _fetch_and_parse(mail, uid, folder)
+        parsed = _fetch_and_parse(mail, uid, folder, hours_window)
         if parsed:
             results.append(parsed)
     return results
 
 
-def _scan_for_recruiter_emails() -> List[Dict[str, Any]]:
-    """Connect to Gmail, scan folders, apply recruiter filters."""
+def _scan_for_recruiter_emails(
+    scan_folders: List[str] | None = None,
+    scan_hours: int | None = None,
+) -> List[Dict[str, Any]]:
+    """Connect to Gmail, scan folders, apply recruiter filters.
+
+    Folders and lookback window can be overridden per-request (UI selections);
+    otherwise the config defaults are used.
+    """
     if not IMAP_USER or not IMAP_PASSWORD:
         raise RuntimeError("IMAP_USER and IMAP_PASSWORD must be set in .env")
+
+    folders_to_scan = tuple(scan_folders) if scan_folders else SCAN_FOLDERS
+    hours_window = scan_hours if (scan_hours and scan_hours > 0) else MAX_EMAIL_AGE_HOURS
 
     mail = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT)
     mail.login(IMAP_USER, IMAP_PASSWORD)
 
-    since = (datetime.now(timezone.utc) - timedelta(hours=MAX_EMAIL_AGE_HOURS)).strftime("%d-%b-%Y")
+    since = (datetime.now(timezone.utc) - timedelta(hours=hours_window)).strftime("%d-%b-%Y")
     since_criteria = f"SINCE {since}"
 
     all_emails: List[Dict[str, Any]] = []
@@ -209,9 +223,9 @@ def _scan_for_recruiter_emails() -> List[Dict[str, Any]]:
             line = f.decode() if isinstance(f, bytes) else str(f)
             parts = line.split('"')
             folder_name = parts[-2] if len(parts) >= 2 else ""
-            if folder_name and any(label in folder_name for label in SCAN_FOLDERS):
+            if folder_name and any(label in folder_name for label in folders_to_scan):
                 logger.info("Scanning folder: %s", folder_name)
-                for parsed in _search_folder(mail, folder_name, since_criteria):
+                for parsed in _search_folder(mail, folder_name, since_criteria, hours_window):
                     mid = parsed.get("message_id", "")
                     if mid and mid not in seen_message_ids:
                         seen_message_ids.add(mid)
@@ -243,7 +257,10 @@ def _is_processed(message_id: str) -> bool:
 
 def scan_recruiter_emails(state: EmailPipelineState) -> Dict[str, Any]:
     """Scan Gmail for new recruiter emails and filter already-processed ones."""
-    emails = _scan_for_recruiter_emails()
+    emails = _scan_for_recruiter_emails(
+        scan_folders=state.get("scan_folders") or None,
+        scan_hours=state.get("scan_hours") or None,
+    )
     new_emails = [e for e in emails if not _is_processed(e.get("message_id", ""))]
 
     if not new_emails:

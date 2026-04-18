@@ -66,3 +66,8 @@ except OSError:
 STATE_FILE_PATH = BASE_DIR / "processed_emails.json"
 FOLLOWUP_STATE_PATH = BASE_DIR / "followup_state.json"
 USAGE_TOTALS_PATH = BASE_DIR / "usage_totals.json"
+PENDING_REPLIES_PATH = BASE_DIR / "pending_replies.json"
+
+# === SMTP (used when user approves a pending reply) ===
+SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))

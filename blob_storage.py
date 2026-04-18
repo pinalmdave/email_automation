@@ -16,6 +16,7 @@ from typing import Optional
 
 from config import (
     FOLLOWUP_STATE_PATH,
+    PENDING_REPLIES_PATH,
     STATE_FILE_PATH,
     USAGE_TOTALS_PATH,
 )
@@ -32,6 +33,7 @@ _STATE_FILES = {
     STATE_FILE_PATH: "processed_emails.json",
     FOLLOWUP_STATE_PATH: "followup_state.json",
     USAGE_TOTALS_PATH: "usage_totals.json",
+    PENDING_REPLIES_PATH: "pending_replies.json",
 }
 
 

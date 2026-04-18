@@ -133,15 +133,21 @@ def _is_from_known_recruiter(from_email: str) -> bool:
 # Gmail scanning for follow-up emails
 # ---------------------------------------------------------------------------
 
-def _scan_for_followup_emails() -> List[Dict[str, Any]]:
+def _scan_for_followup_emails(
+    scan_folders: List[str] | None = None,
+    scan_hours: int | None = None,
+) -> List[Dict[str, Any]]:
     """Scan Gmail for reply emails from recruiters we previously contacted."""
     if not IMAP_USER or not IMAP_PASSWORD:
         raise RuntimeError("IMAP_USER and IMAP_PASSWORD must be set in .env")
 
+    folders_to_scan = tuple(scan_folders) if scan_folders else SCAN_FOLDERS
+    hours_window = scan_hours if (scan_hours and scan_hours > 0) else MAX_EMAIL_AGE_HOURS
+
     mail = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT)
     mail.login(IMAP_USER, IMAP_PASSWORD)
 
-    since = (datetime.now(timezone.utc) - timedelta(hours=MAX_EMAIL_AGE_HOURS)).strftime("%d-%b-%Y")
+    since = (datetime.now(timezone.utc) - timedelta(hours=hours_window)).strftime("%d-%b-%Y")
     since_criteria = f"SINCE {since}"
 
     all_followups: List[Dict[str, Any]] = []
@@ -153,7 +159,7 @@ def _scan_for_followup_emails() -> List[Dict[str, Any]]:
             line = f.decode() if isinstance(f, bytes) else str(f)
             parts = line.split('"')
             folder_name = parts[-2] if len(parts) >= 2 else ""
-            if folder_name and any(label in folder_name for label in SCAN_FOLDERS):
+            if folder_name and any(label in folder_name for label in folders_to_scan):
                 try:
                     st, _ = mail.select(folder_name, readonly=True)
                 except Exception:
@@ -187,7 +193,7 @@ def _scan_for_followup_emails() -> List[Dict[str, Any]]:
                         dt = parsedate_to_datetime(date_str)
                         if dt.tzinfo is None:
                             dt = dt.replace(tzinfo=timezone.utc)
-                        if (datetime.now(timezone.utc) - dt).total_seconds() > MAX_EMAIL_AGE_HOURS * 3600:
+                        if (datetime.now(timezone.utc) - dt).total_seconds() > hours_window * 3600:
                             continue
                     except Exception:
                         continue
@@ -222,7 +228,10 @@ def _scan_for_followup_emails() -> List[Dict[str, Any]]:
 
 def scan_followup_emails(state: EmailPipelineState) -> Dict[str, Any]:
     """Scan Gmail for follow-up emails from known recruiters."""
-    followups = _scan_for_followup_emails()
+    followups = _scan_for_followup_emails(
+        scan_folders=state.get("scan_folders") or None,
+        scan_hours=state.get("scan_hours") or None,
+    )
     new_followups = [f for f in followups if not is_followup_processed(f.get("message_id", ""))]
 
     if not new_followups:

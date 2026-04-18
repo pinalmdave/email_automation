@@ -16,6 +16,10 @@ class EmailPipelineState(TypedDict):
     run_recruiter_scan: bool
     run_followup_scan: bool
 
+    # -- Scan parameters (overridable from UI; fall back to config defaults) --
+    scan_folders: List[str]        # e.g. ["INBOX", "UPDATES"]
+    scan_hours: int                # lookback window in hours
+
     # -- Scan tracking --
     recruiter_scan_done: bool
     followup_scan_done: bool

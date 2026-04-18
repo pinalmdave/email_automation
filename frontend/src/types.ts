@@ -27,6 +27,52 @@ export interface EvaluationInfo {
   feedback: string;
 }
 
+export interface ProcessedEmail {
+  message_id: string;
+  subject: string;
+  from_email: string;
+  processed_at: string;
+  resume_filename: string;
+  resume_download_url: string;
+  pending_reply_id: string;
+  status: string;
+}
+
+export interface Conversation {
+  id: string;
+  kind: "recruiter_initial" | "followup";
+  status: "pending" | "approved" | "sent" | "cancelled" | "send_failed";
+  created_at: string;
+  updated_at: string;
+  intent?: string;
+  resume_filename?: string;
+  resume_path?: string;
+  staffing_company_name?: string;
+  target_role_title?: string;
+  last_error?: string;
+  original: {
+    message_id: string;
+    from_email: string;
+    subject: string;
+    date: string;
+    imap_uid: string;
+    folder: string;
+  };
+  reply: {
+    to: string;
+    subject: string;
+    body: string;
+  };
+}
+
+export interface AppConfig {
+  gmail_account: string;
+  available_folders: string[];
+  default_folders: string[];
+  default_hours: number;
+  duration_options_hours: number[];
+}
+
 export interface ProgressEvent {
   event: "started" | "node_complete" | "done" | "error";
   node?: string;

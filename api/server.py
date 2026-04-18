@@ -15,18 +15,29 @@ Run:  uvicorn api.server:app --host 0.0.0.0 --port 8000 --reload
 """
 
 import asyncio
+import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
+from pydantic import BaseModel
 
+import pending_replies
 from blob_storage import bootstrap_state_from_blob, generate_resume_sas_url
-from config import GRAPH_RECURSION_LIMIT, RESUME_OUTPUT_DIR
+from config import (
+    GRAPH_RECURSION_LIMIT,
+    IMAP_USER,
+    MAX_EMAIL_AGE_HOURS,
+    RESUME_OUTPUT_DIR,
+    SCAN_FOLDERS,
+    STATE_FILE_PATH,
+)
 from graph import compile_graph
+from smtp_send import send_pending_reply
 from usage_tracker import get_snapshot, reset_session
 
 # Pull any persisted state (processed emails, follow-up state, usage totals)
@@ -67,6 +78,8 @@ def _base_state() -> Dict[str, Any]:
         "next_node": "",
         "run_recruiter_scan": False,
         "run_followup_scan": False,
+        "scan_folders": [],
+        "scan_hours": 0,
         "recruiter_scan_done": False,
         "followup_scan_done": False,
         "scanned_emails": [],
@@ -91,10 +104,17 @@ def _base_state() -> Dict[str, Any]:
     }
 
 
-def _emails_state() -> Dict[str, Any]:
+def _emails_state(
+    folders: Optional[List[str]] = None,
+    hours: Optional[int] = None,
+) -> Dict[str, Any]:
     st = _base_state()
     st["run_recruiter_scan"] = True
     st["run_followup_scan"] = True
+    if folders:
+        st["scan_folders"] = folders
+    if hours:
+        st["scan_hours"] = hours
     return st
 
 
@@ -232,9 +252,29 @@ async def _stream_pipeline(websocket: WebSocket, initial_state: Dict[str, Any]) 
 
 @app.websocket("/ws/process-emails")
 async def ws_process_emails(websocket: WebSocket) -> None:
-    """Kick off the Gmail scan flow (recruiter + follow-ups) on connect."""
+    """
+    Kick off the Gmail scan flow (recruiter + follow-ups).
+
+    Protocol: the client MAY send a kickoff JSON with scan parameters:
+        {"folders": ["INBOX","UPDATES"], "hours": 24}
+    If nothing is sent within 500 ms, fall back to config defaults.
+    """
     await websocket.accept()
-    await _stream_pipeline(websocket, _emails_state())
+    folders: Optional[List[str]] = None
+    hours: Optional[int] = None
+    try:
+        payload = await asyncio.wait_for(websocket.receive_json(), timeout=0.5)
+        if isinstance(payload, dict):
+            f = payload.get("folders")
+            if isinstance(f, list) and all(isinstance(x, str) for x in f):
+                folders = [x for x in f if x]
+            h = payload.get("hours")
+            if isinstance(h, (int, float)) and h > 0:
+                hours = int(h)
+    except (asyncio.TimeoutError, WebSocketDisconnect, ValueError):
+        pass
+
+    await _stream_pipeline(websocket, _emails_state(folders=folders, hours=hours))
     try:
         await websocket.close()
     except Exception:
@@ -281,6 +321,107 @@ def health() -> Dict[str, str]:
 def usage() -> Dict[str, Any]:
     """Return current session + persisted total token/cost usage."""
     return get_snapshot()
+
+
+@app.get("/api/config")
+def config_info() -> Dict[str, Any]:
+    """UI-facing config defaults — current Gmail account, folders, lookback window."""
+    return {
+        "gmail_account": IMAP_USER,
+        "available_folders": list(SCAN_FOLDERS),
+        "default_folders": list(SCAN_FOLDERS),
+        "default_hours": MAX_EMAIL_AGE_HOURS,
+        "duration_options_hours": [24, 48, 72, 168],
+    }
+
+
+@app.get("/api/processed-emails")
+def processed_emails_list() -> Dict[str, Any]:
+    """Return the processed_emails ledger as a list (newest first)."""
+    if not STATE_FILE_PATH.exists():
+        return {"items": []}
+    try:
+        raw = json.loads(STATE_FILE_PATH.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {"items": []}
+
+    items: List[Dict[str, Any]] = []
+    for message_id, entry in raw.items():
+        if not isinstance(entry, dict):
+            continue
+        resume_file = entry.get("resume_file", "")
+        resume_name = Path(resume_file).name if resume_file else ""
+        items.append({
+            "message_id": message_id,
+            "subject": entry.get("subject", ""),
+            "from_email": entry.get("from_email", ""),
+            "processed_at": entry.get("processed_at", ""),
+            "resume_filename": resume_name,
+            "resume_download_url": f"/api/resume/{resume_name}" if resume_name else "",
+            "pending_reply_id": entry.get("pending_reply_id", ""),
+            "status": entry.get("status", "processed"),
+        })
+    items.sort(key=lambda x: x.get("processed_at", ""), reverse=True)
+    return {"items": items}
+
+
+# ---------------------------------------------------------------------------
+# Conversations — human-in-the-loop for pending replies
+# ---------------------------------------------------------------------------
+
+class EditReplyBody(BaseModel):
+    subject: Optional[str] = None
+    body: Optional[str] = None
+
+
+@app.get("/api/conversations")
+def list_conversations(status: str = "pending") -> Dict[str, Any]:
+    """List pending / approved / cancelled conversations."""
+    if status == "all":
+        return {"items": pending_replies.list_pending(status=None)}
+    return {"items": pending_replies.list_pending(status=status)}
+
+
+@app.get("/api/conversations/{reply_id}")
+def get_conversation(reply_id: str) -> Dict[str, Any]:
+    item = pending_replies.get(reply_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Reply not found")
+    return item
+
+
+@app.post("/api/conversations/{reply_id}/edit")
+def edit_conversation(reply_id: str, body: EditReplyBody) -> Dict[str, Any]:
+    updated = pending_replies.update_reply_text(reply_id, body.subject, body.body)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Reply not found")
+    return updated
+
+
+@app.post("/api/conversations/{reply_id}/cancel")
+def cancel_conversation(reply_id: str) -> Dict[str, Any]:
+    updated = pending_replies.mark_status(reply_id, "cancelled")
+    if not updated:
+        raise HTTPException(status_code=404, detail="Reply not found")
+    return updated
+
+
+@app.post("/api/conversations/{reply_id}/approve")
+def approve_conversation(reply_id: str) -> Dict[str, Any]:
+    """Approve and SEND the pending reply via SMTP."""
+    item = pending_replies.get(reply_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Reply not found")
+    if item.get("status") != "pending":
+        raise HTTPException(status_code=409, detail=f"Reply already {item.get('status')}")
+
+    err = send_pending_reply(item)
+    if err:
+        pending_replies.mark_status(reply_id, "send_failed", last_error=err)
+        raise HTTPException(status_code=502, detail=f"SMTP send failed: {err}")
+
+    updated = pending_replies.mark_status(reply_id, "sent", sent_at_iso=item["updated_at"])
+    return updated or item
 
 
 @app.get("/api/resume/{filename}")
