@@ -155,8 +155,11 @@ def _serialize_event(node_name: str, update: Dict[str, Any]) -> Dict[str, Any]:
     if summary:
         payload["summary"] = summary
 
-    # Evaluator verdict — surface to the UI so the progress log shows the loop.
-    if "resume_evaluation_done" in update or "resume_evaluation_score" in update:
+    # Evaluator verdict — only surface when the evaluator actually ran, i.e.
+    # resume_evaluation_done flipped to True. The generator also writes the
+    # evaluation fields (to False/0.0) to reset them, but we don't want those
+    # resets to show up in the UI as a real verdict.
+    if update.get("resume_evaluation_done") is True:
         payload["evaluation"] = {
             "score": update.get("resume_evaluation_score", 0.0),
             "accepted": bool(update.get("resume_evaluation_accepted", False)),
