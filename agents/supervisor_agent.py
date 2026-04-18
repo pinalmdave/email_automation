@@ -60,14 +60,30 @@ def supervisor(state: EmailPipelineState) -> Dict[str, Any]:
     if current_email:
         resume_path = state.get("resume_path", "")
         resume_json = state.get("resume_json", {})
+        iterations = state.get("resume_iterations", 0)
 
         if not resume_path or not resume_json:
+            # Safety net: if the generator has already failed MAX times
+            # without producing a resume, stop to avoid an infinite
+            # generate→fail→generate loop eating the recursion budget.
+            # Terminates the whole run; any remaining emails are picked up
+            # on the next invocation (they're still unprocessed in Gmail).
+            if iterations >= MAX_RESUME_ITERATIONS:
+                subject = current_email.get("subject", "(no subject)")
+                logger.error(
+                    "Generator failed %d times for '%s' — finalizing run",
+                    iterations, subject,
+                )
+                return {
+                    "next_node": NODE_FINALIZE,
+                    "errors": [f"Gave up on '{subject}' after {iterations} failed generations"],
+                }
+
             logger.info("  Supervisor → generate_resume_agent")
             return {"next_node": AGENT_GENERATE_RESUME}
 
         # Resume generated. Evaluator-optimizer loop decides whether to
         # accept, regenerate with feedback, or give up at the iteration cap.
-        iterations = state.get("resume_iterations", 0)
         evaluated = state.get("resume_evaluation_done", False)
         accepted = state.get("resume_evaluation_accepted", False)
 

@@ -17,6 +17,7 @@ import argparse
 import logging
 import sys
 
+from config import GRAPH_RECURSION_LIMIT
 from graph import compile_graph
 
 logging.basicConfig(
@@ -94,7 +95,7 @@ def main():
     state = _initial_state(run_p1, run_p2, jd_text)
 
     try:
-        result = graph.invoke(state, {"recursion_limit": 100})
+        result = graph.invoke(state, {"recursion_limit": GRAPH_RECURSION_LIMIT})
     except KeyboardInterrupt:
         logger.info("Interrupted by user. Shutting down.")
         sys.exit(0)

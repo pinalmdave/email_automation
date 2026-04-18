@@ -25,7 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 
 from blob_storage import bootstrap_state_from_blob, generate_resume_sas_url
-from config import RESUME_OUTPUT_DIR
+from config import GRAPH_RECURSION_LIMIT, RESUME_OUTPUT_DIR
 from graph import compile_graph
 from usage_tracker import get_snapshot, reset_session
 
@@ -196,7 +196,7 @@ async def _stream_pipeline(websocket: WebSocket, initial_state: Dict[str, Any]) 
         return
 
     try:
-        stream_iter = _graph.stream(initial_state, {"recursion_limit": 100})
+        stream_iter = _graph.stream(initial_state, {"recursion_limit": GRAPH_RECURSION_LIMIT})
         sentinel = object()
 
         def _next_chunk():
