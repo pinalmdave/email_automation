@@ -28,6 +28,11 @@ class EmailPipelineState(TypedDict):
     job_description_text: str
     job_description_done: bool
 
+    # -- Apply-from-URL flow (user pastes a job URL) --
+    job_url: str
+    job_url_fetched: bool
+    apply_plan_id: str
+
     # -- Recruiter email processing --
     scanned_emails: List[Dict[str, Any]]
     current_email_index: int

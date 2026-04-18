@@ -28,6 +28,7 @@ NODE_RENDER_DRAFT     = "render_and_draft_node"
 NODE_SCAN_FOLLOWUP    = "scan_followup_emails_node"
 AGENT_ANALYZE_REPLY   = "analyze_and_reply_followup_agent"
 NODE_PROCESS_JD       = "process_job_description_node"
+NODE_PROCESS_JOB_URL  = "process_job_url_node"
 NODE_FINALIZE         = "finalize_node"
 
 
@@ -48,6 +49,12 @@ def supervisor(state: EmailPipelineState) -> Dict[str, Any]:
     8. If followup scan not done & enabled                   → scan_followup_emails
     9. Otherwise                                             → finalize
     """
+
+    # ── Apply from URL (UI-pasted job posting URL) ──────────────────
+    job_url = (state.get("job_url") or "").strip()
+    if job_url and not state.get("job_url_fetched", False):
+        logger.info("  Supervisor → process_job_url_node")
+        return {"next_node": NODE_PROCESS_JOB_URL}
 
     # ── Manual job description (UI paste) ───────────────────────────
     jd_text = (state.get("job_description_text") or "").strip()
@@ -112,8 +119,9 @@ def supervisor(state: EmailPipelineState) -> Dict[str, Any]:
                 "  Iteration cap hit (%d) — using last resume (score %.2f)",
                 iterations, state.get("resume_evaluation_score", 0.0),
             )
-        if jd_text:
-            logger.info("  Supervisor → finalize_node (manual JD, skip draft)")
+        if jd_text or state.get("apply_plan_id"):
+            reason = "manual JD" if jd_text else "apply-from-URL"
+            logger.info("  Supervisor → finalize_node (%s, skip draft)", reason)
             return {"next_node": NODE_FINALIZE}
         logger.info("  Supervisor → render_and_draft_node")
         return {"next_node": NODE_RENDER_DRAFT}

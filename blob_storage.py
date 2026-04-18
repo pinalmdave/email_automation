@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Optional
 
 from config import (
+    APPLY_PLANS_PATH,
     FOLLOWUP_STATE_PATH,
     PENDING_REPLIES_PATH,
     STATE_FILE_PATH,
@@ -34,6 +35,7 @@ _STATE_FILES = {
     FOLLOWUP_STATE_PATH: "followup_state.json",
     USAGE_TOTALS_PATH: "usage_totals.json",
     PENDING_REPLIES_PATH: "pending_replies.json",
+    APPLY_PLANS_PATH: "apply_plans.json",
 }
 
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { fetchConfig, fetchConversations, fetchProcessedEmails, fetchUsage } from "./api";
+import { fetchApplyPlans, fetchConfig, fetchConversations, fetchProcessedEmails, fetchUsage } from "./api";
+import { ApplyHistory } from "./components/ApplyHistory";
 import { ChatUI } from "./components/ChatUI";
 import { Conversations } from "./components/Conversations";
 import { DashboardHeader } from "./components/DashboardHeader";
@@ -21,6 +22,7 @@ export default function App() {
   const [reloadKey, setReloadKey] = useState(0);
   const [processedCount, setProcessedCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
+  const [applyReadyCount, setApplyReadyCount] = useState(0);
   const pipeline = usePipelineWS(initialUsage);
 
   useEffect(() => {
@@ -34,6 +36,9 @@ export default function App() {
   useEffect(() => {
     fetchProcessedEmails().then((items) => setProcessedCount(items.length)).catch(() => {});
     fetchConversations("pending").then((items) => setPendingCount(items.length)).catch(() => {});
+    fetchApplyPlans("all")
+      .then((items) => setApplyReadyCount(items.filter((i) => i.status === "ready").length))
+      .catch(() => {});
   }, [reloadKey]);
 
   // Refresh lists whenever the pipeline finishes a run.
@@ -58,6 +63,14 @@ export default function App() {
     });
   };
 
+  const handleSubmitURL = (url: string) => {
+    pipeline.start("/ws/apply-from-url", (ws) => {
+      ws.send(JSON.stringify({ url }));
+    });
+    // Switch the user to the Apply History tab so they see the plan appear.
+    setTab("apply");
+  };
+
   return (
     <div className="app">
       <Sidebar
@@ -65,6 +78,7 @@ export default function App() {
         onChange={setTab}
         pendingCount={pendingCount}
         processedCount={processedCount}
+        applyReadyCount={applyReadyCount}
       />
       <div className="app__main">
         <DashboardHeader
@@ -88,11 +102,14 @@ export default function App() {
             <ProcessedEmails reloadKey={reloadKey} />
           ) : tab === "conversations" ? (
             <Conversations reloadKey={reloadKey} onChange={() => setReloadKey((k) => k + 1)} />
+          ) : tab === "apply" ? (
+            <ApplyHistory reloadKey={reloadKey} onChange={() => setReloadKey((k) => k + 1)} />
           ) : (
             <div className="chat-layout">
               <ChatUI
                 running={pipeline.running}
-                onSubmit={handleSubmitJD}
+                onSubmitJD={handleSubmitJD}
+                onSubmitURL={handleSubmitURL}
                 onProcessEmails={handleProcessEmails}
               />
               <ProgressLog

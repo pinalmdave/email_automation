@@ -65,6 +65,26 @@ export interface Conversation {
   };
 }
 
+export type ApplyPlanStatus = "planning" | "ready" | "applied" | "cancelled";
+
+export interface ApplyPlan {
+  id: string;
+  status: ApplyPlanStatus;
+  job_url: string;
+  job_title: string;
+  company_name: string;
+  source: string;
+  jd_text: string;
+  resume_filename: string;
+  resume_path: string;
+  target_role_title: string;
+  staffing_company_name: string;
+  notes: string;
+  created_at: string;
+  updated_at: string;
+  applied_at: string;
+}
+
 export interface AppConfig {
   gmail_account: string;
   available_folders: string[];

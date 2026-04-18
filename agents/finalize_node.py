@@ -1,10 +1,16 @@
 """
 Finalize Node — builds a human-readable summary of the pipeline run.
+
+Also links the generated resume back to the apply_plan entry for
+apply-from-URL runs, flipping the plan from "planning" to "ready" so it
+shows up in the Apply History tab waiting for the user.
 """
 
 import logging
+from pathlib import Path
 from typing import Any, Dict
 
+import apply_plans
 from graph.state import EmailPipelineState
 
 logger = logging.getLogger(__name__)
@@ -16,19 +22,41 @@ def finalize(state: EmailPipelineState) -> Dict[str, Any]:
     p2 = state.get("followup_processed", 0)
     errors = state.get("errors", [])
 
+    # If this run was an apply-from-URL, attach the resume to the plan.
+    apply_plan_id = state.get("apply_plan_id", "")
+    if apply_plan_id:
+        resume_path = state.get("resume_path", "")
+        resume_json = state.get("resume_json", {}) or {}
+        updates: Dict[str, Any] = {}
+        if resume_path:
+            updates["resume_path"] = resume_path
+            updates["resume_filename"] = Path(resume_path).name
+            updates["status"] = "ready"
+        if resume_json:
+            if resume_json.get("target_role_title"):
+                updates["target_role_title"] = resume_json["target_role_title"]
+            if resume_json.get("staffing_company_name"):
+                updates["staffing_company_name"] = resume_json["staffing_company_name"]
+        if updates:
+            apply_plans.update(apply_plan_id, **updates)
+            logger.info("Apply plan %s promoted to 'ready' with resume %s",
+                        apply_plan_id, updates.get("resume_filename", ""))
+
     parts = []
     if state.get("run_recruiter_scan"):
         parts.append(f"Recruiter emails: {p1} processed")
     if state.get("run_followup_scan"):
         parts.append(f"Follow-ups: {p2} processed")
+    if apply_plan_id:
+        parts.append("Apply plan ready for review")
     if errors:
         parts.append(f"Errors: {len(errors)}")
         for err in errors:
             parts.append(f"  - {err}")
 
-    summary = " | ".join(parts[:2])
+    summary = " | ".join(parts[:3])
     if errors:
-        summary += "\n" + "\n".join(parts[2:])
+        summary += "\n" + "\n".join(parts[3:])
 
-    logger.info("Pipeline complete. %s", summary.split("\n")[0])
+    logger.info("Pipeline complete. %s", (summary or "no-op").split("\n")[0])
     return {"summary": summary}

@@ -1,4 +1,4 @@
-import type { AppConfig, Conversation, ProcessedEmail, UsageSnapshot } from "./types";
+import type { ApplyPlan, AppConfig, Conversation, ProcessedEmail, UsageSnapshot } from "./types";
 
 const BASE = (import.meta as any).env?.VITE_API_BASE_URL ?? "";
 
@@ -52,6 +52,26 @@ export async function approveConversation(id: string): Promise<Conversation> {
 
 export async function cancelConversation(id: string): Promise<Conversation> {
   return jsonFetch<Conversation>(`/api/conversations/${id}/cancel`, { method: "POST" });
+}
+
+export async function fetchApplyPlans(status = "all"): Promise<ApplyPlan[]> {
+  const r = await jsonFetch<{ items: ApplyPlan[] }>(`/api/apply-plans?status=${encodeURIComponent(status)}`);
+  return r.items;
+}
+
+export async function applyPlanMarkApplied(id: string, notes = ""): Promise<ApplyPlan> {
+  return jsonFetch<ApplyPlan>(`/api/apply-plans/${id}/mark-applied`, {
+    method: "POST",
+    body: JSON.stringify({ notes }),
+  });
+}
+
+export async function applyPlanCancel(id: string): Promise<ApplyPlan> {
+  return jsonFetch<ApplyPlan>(`/api/apply-plans/${id}/cancel`, { method: "POST" });
+}
+
+export async function applyPlanDelete(id: string): Promise<void> {
+  await jsonFetch<{ deleted: string }>(`/api/apply-plans/${id}`, { method: "DELETE" });
 }
 
 export function resumeDownloadHref(downloadUrl: string): string {

@@ -26,6 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
 
+import apply_plans
 import pending_replies
 from blob_storage import bootstrap_state_from_blob, generate_resume_sas_url
 from config import (
@@ -99,6 +100,9 @@ def _base_state() -> Dict[str, Any]:
         "followup_processed": 0,
         "job_description_text": "",
         "job_description_done": False,
+        "job_url": "",
+        "job_url_fetched": False,
+        "apply_plan_id": "",
         "errors": [],
         "summary": "",
     }
@@ -124,6 +128,12 @@ def _jd_state(jd_text: str) -> Dict[str, Any]:
     return st
 
 
+def _apply_url_state(url: str) -> Dict[str, Any]:
+    st = _base_state()
+    st["job_url"] = url
+    return st
+
+
 # ---------------------------------------------------------------------------
 # Progress-event shaping
 # ---------------------------------------------------------------------------
@@ -137,6 +147,7 @@ _NODE_LABELS = {
     "scan_followup_emails_node":         "Scanning for recruiter follow-ups",
     "analyze_and_reply_followup_agent":  "Analyzing follow-up & drafting reply",
     "process_job_description_node":      "Processing pasted job description",
+    "process_job_url_node":              "Fetching job posting from URL",
     "finalize_node":                     "Finalizing",
 }
 
@@ -308,6 +319,34 @@ async def ws_process_jd(websocket: WebSocket) -> None:
         pass
 
 
+@app.websocket("/ws/apply-from-url")
+async def ws_apply_from_url(websocket: WebSocket) -> None:
+    """
+    Accept a job posting URL, fetch the JD, generate a tailored resume,
+    and park the result in Apply History as status=ready.
+
+    Protocol: client sends {"url": "..."}; server streams the same
+    node-by-node progress events used by the other flows.
+    """
+    await websocket.accept()
+    try:
+        data = await websocket.receive_json()
+    except WebSocketDisconnect:
+        return
+
+    url = (data or {}).get("url", "").strip()
+    if not url or not (url.startswith("http://") or url.startswith("https://")):
+        await websocket.send_json({"event": "error", "message": "Provide a valid http(s) URL"})
+        await websocket.close()
+        return
+
+    await _stream_pipeline(websocket, _apply_url_state(url))
+    try:
+        await websocket.close()
+    except Exception:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # HTTP endpoints
 # ---------------------------------------------------------------------------
@@ -422,6 +461,51 @@ def approve_conversation(reply_id: str) -> Dict[str, Any]:
 
     updated = pending_replies.mark_status(reply_id, "sent", sent_at_iso=item["updated_at"])
     return updated or item
+
+
+# ---------------------------------------------------------------------------
+# Apply plans — job applications prepared from pasted URLs
+# ---------------------------------------------------------------------------
+
+class ApplyNotesBody(BaseModel):
+    notes: Optional[str] = ""
+
+
+@app.get("/api/apply-plans")
+def list_apply_plans(status: str = "all") -> Dict[str, Any]:
+    return {"items": apply_plans.list_plans(status=status)}
+
+
+@app.get("/api/apply-plans/{plan_id}")
+def get_apply_plan(plan_id: str) -> Dict[str, Any]:
+    item = apply_plans.get(plan_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Apply plan not found")
+    return item
+
+
+@app.post("/api/apply-plans/{plan_id}/mark-applied")
+def apply_plan_mark_applied(plan_id: str, body: ApplyNotesBody) -> Dict[str, Any]:
+    updated = apply_plans.mark_applied(plan_id, notes=body.notes or "")
+    if not updated:
+        raise HTTPException(status_code=404, detail="Apply plan not found")
+    return updated
+
+
+@app.post("/api/apply-plans/{plan_id}/cancel")
+def apply_plan_cancel(plan_id: str) -> Dict[str, Any]:
+    updated = apply_plans.cancel(plan_id)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Apply plan not found")
+    return updated
+
+
+@app.delete("/api/apply-plans/{plan_id}")
+def apply_plan_delete(plan_id: str) -> Dict[str, Any]:
+    ok = apply_plans.delete(plan_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Apply plan not found")
+    return {"deleted": plan_id}
 
 
 @app.get("/api/resume/{filename}")

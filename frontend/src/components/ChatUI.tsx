@@ -2,18 +2,17 @@ import { useState } from "react";
 
 interface Props {
   running: boolean;
-  onSubmit: (jd: string) => void;
+  onSubmitJD: (jd: string) => void;
+  onSubmitURL: (url: string) => void;
   onProcessEmails: () => void;
 }
 
-export function ChatUI({ running, onSubmit, onProcessEmails }: Props) {
+export function ChatUI({ running, onSubmitJD, onSubmitURL, onProcessEmails }: Props) {
   const [jd, setJd] = useState("");
+  const [url, setUrl] = useState("");
 
-  const handleSend = () => {
-    const trimmed = jd.trim();
-    if (!trimmed || running) return;
-    onSubmit(trimmed);
-  };
+  const jdReady = !running && jd.trim().length > 0;
+  const urlReady = !running && /^https?:\/\//i.test(url.trim());
 
   return (
     <div className="chat-ui">
@@ -27,11 +26,38 @@ export function ChatUI({ running, onSubmit, onProcessEmails }: Props) {
           Process Job Emails
         </button>
         <div className="chat-ui__hint">
-          Or paste a job description below to generate a tailored resume on demand.
+          Or paste a job URL / JD below to generate a tailored resume.
         </div>
       </div>
 
-      <div className="chat-ui__composer">
+      <div className="chat-ui__section">
+        <div className="chat-ui__section-label">Apply from URL</div>
+        <div className="chat-ui__url-row">
+          <input
+            className="chat-ui__url"
+            type="url"
+            placeholder="https://www.linkedin.com/jobs/view/…  or Indeed/Dice/Monster/ZipRecruiter URL"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            disabled={running}
+          />
+          <button
+            className="btn btn--primary"
+            onClick={() => { if (urlReady) onSubmitURL(url.trim()); }}
+            disabled={!urlReady}
+          >
+            {running ? "Running…" : "Fetch & generate"}
+          </button>
+        </div>
+        <div className="chat-ui__hint">
+          App fetches the posting, extracts the JD, generates a tailored resume,
+          and creates a plan in <b>Apply History</b>. You review, then apply
+          yourself on the job site.
+        </div>
+      </div>
+
+      <div className="chat-ui__section chat-ui__section--grow">
+        <div className="chat-ui__section-label">Paste Job Description</div>
         <textarea
           className="chat-ui__input"
           placeholder="Paste a job description here..."
@@ -44,8 +70,8 @@ export function ChatUI({ running, onSubmit, onProcessEmails }: Props) {
           <span className="chat-ui__chars">{jd.length} chars</span>
           <button
             className="btn btn--send"
-            onClick={handleSend}
-            disabled={running || jd.trim().length === 0}
+            onClick={() => { if (jdReady) onSubmitJD(jd.trim()); }}
+            disabled={!jdReady}
           >
             {running ? "Running…" : "Generate Resume"}
           </button>

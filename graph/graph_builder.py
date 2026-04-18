@@ -16,6 +16,7 @@ from agents.evaluate_resume_agent import evaluate_resume
 from agents.finalize_node import finalize
 from agents.generate_resume_agent import generate_resume
 from agents.process_job_description_node import process_job_description
+from agents.process_job_url_node import process_job_url
 from agents.render_and_draft_node import render_and_draft
 from agents.scan_followup_emails_node import scan_followup_emails
 from agents.scan_recruiter_emails_node import scan_recruiter_emails
@@ -43,6 +44,7 @@ def build_graph() -> StateGraph:
     graph.add_node("render_and_draft_node", render_and_draft)
     graph.add_node("scan_followup_emails_node", scan_followup_emails)
     graph.add_node("process_job_description_node", process_job_description)
+    graph.add_node("process_job_url_node", process_job_url)
     graph.add_node("finalize_node", finalize)
 
     # -- Entry point: always start at the supervisor --
@@ -60,6 +62,7 @@ def build_graph() -> StateGraph:
         "scan_followup_emails_node",
         "analyze_and_reply_followup_agent",
         "process_job_description_node",
+        "process_job_url_node",
     ]:
         graph.add_edge(node_name, "supervisor_agent")
 

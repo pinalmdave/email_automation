@@ -1,19 +1,21 @@
-export type TabKey = "processed" | "conversations" | "chat";
+export type TabKey = "processed" | "conversations" | "apply" | "chat";
 
 interface Props {
   active: TabKey;
   onChange: (tab: TabKey) => void;
   pendingCount: number;
   processedCount: number;
+  applyReadyCount: number;
 }
 
 const TABS: { key: TabKey; label: string; icon: string }[] = [
   { key: "processed",     label: "Processed Emails", icon: "✉" },
   { key: "conversations", label: "Conversations",    icon: "✎" },
-  { key: "chat",          label: "Chat (paste JD)",  icon: "💬" },
+  { key: "apply",         label: "Apply History",    icon: "⇢" },
+  { key: "chat",          label: "Chat / Apply URL", icon: "💬" },
 ];
 
-export function Sidebar({ active, onChange, pendingCount, processedCount }: Props) {
+export function Sidebar({ active, onChange, pendingCount, processedCount, applyReadyCount }: Props) {
   return (
     <nav className="sidebar">
       <div className="sidebar__brand">Smart Email</div>
@@ -22,6 +24,7 @@ export function Sidebar({ active, onChange, pendingCount, processedCount }: Prop
           const badge =
             t.key === "processed" && processedCount > 0 ? processedCount :
             t.key === "conversations" && pendingCount > 0 ? pendingCount :
+            t.key === "apply" && applyReadyCount > 0 ? applyReadyCount :
             undefined;
           const isActive = active === t.key;
           return (

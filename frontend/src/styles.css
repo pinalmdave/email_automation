@@ -434,6 +434,60 @@ body {
 .chat-ui__input:focus { border-color: var(--accent); }
 .chat-ui__composer-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .chat-ui__chars { color: var(--text-dim); font-size: 12px; }
+.chat-ui__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.chat-ui__section--grow { flex: 1; min-height: 0; }
+.chat-ui__section-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-dim);
+}
+.chat-ui__url-row { display: flex; gap: 8px; }
+.chat-ui__url {
+  flex: 1;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  outline: none;
+}
+.chat-ui__url:focus { border-color: var(--accent); }
+
+.pane__filters { display: flex; gap: 6px; }
+.filter-chip {
+  appearance: none;
+  background: var(--bg-elev);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  cursor: pointer;
+  text-transform: capitalize;
+}
+.filter-chip:hover { border-color: var(--accent); color: var(--text); }
+.filter-chip--active { background: var(--accent); color: #0b1022; border-color: var(--accent); }
+.filter-chip__count { opacity: 0.7; margin-left: 4px; }
+
+.pill--small { font-size: 11px; padding: 2px 8px; }
+
+.tag--planning  { background: rgba(242,201,76,0.15); color: var(--warning); }
+.tag--ready     { background: rgba(122,162,255,0.18); color: var(--accent); }
+.tag--applied   { background: rgba(74,222,128,0.15); color: var(--success); }
+.tag--cancelled { background: rgba(154,163,178,0.15); color: var(--text-dim); }
+
+.tbl__actions { display: flex; flex-wrap: wrap; gap: 6px; }
 
 /* --- Progress log --- */
 .progress-log { padding: 16px 20px; display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; }
