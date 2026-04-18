@@ -146,6 +146,7 @@ export default function App() {
               events={pipeline.events}
               running={pipeline.running}
               error={pipeline.error}
+              quality={pipeline.quality}
             />
           </div>
         ) : null}
