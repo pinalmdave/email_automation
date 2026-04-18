@@ -104,9 +104,17 @@ export function ApplyHistory({ reloadKey, onChange }: Props) {
         </thead>
         <tbody>
           {filtered.map((p) => (
-            <tr key={p.id}>
+            <tr key={p.id} className={p.recommendation === "decline" ? "tbl__row--warn" : ""}>
               <td>
                 <span className={`tag tag--${p.status}`}>{p.status}</span>
+                {p.recommendation === "decline" ? (
+                  <div className="tag tag--decline" title={p.decline_reason}>⚠ poor fit</div>
+                ) : null}
+                {typeof p.evaluation_score === "number" && p.evaluation_score > 0 ? (
+                  <div className="tbl__muted" style={{ fontSize: 11, marginTop: 2 }}>
+                    score {p.evaluation_score.toFixed(2)}
+                  </div>
+                ) : null}
               </td>
               <td>
                 <div className="tbl__subject" title={p.job_title}>
@@ -117,6 +125,9 @@ export function ApplyHistory({ reloadKey, onChange }: Props) {
                 <div className="tbl__muted">
                   {[p.company_name, p.staffing_company_name, p.target_role_title].filter(Boolean).join(" · ")}
                 </div>
+                {p.recommendation === "decline" && p.decline_reason ? (
+                  <div className="tbl__warn-reason">⚠ {p.decline_reason}</div>
+                ) : null}
               </td>
               <td><span className="pill pill--small">{p.source || hostOf(p.job_url)}</span></td>
               <td className="tbl__date">{formatDate(p.created_at)}</td>

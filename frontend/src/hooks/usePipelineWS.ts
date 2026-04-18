@@ -1,11 +1,12 @@
 import { useCallback, useRef, useState } from "react";
-import type { ProgressEvent, UsageSnapshot } from "../types";
+import type { ProgressEvent, QualitySettings, UsageSnapshot } from "../types";
 
 export interface PipelineState {
   running: boolean;
   events: ProgressEvent[];
   usage: UsageSnapshot | null;
   error: string | null;
+  quality: QualitySettings | null;
 }
 
 export function usePipelineWS(initialUsage: UsageSnapshot | null) {
@@ -14,6 +15,7 @@ export function usePipelineWS(initialUsage: UsageSnapshot | null) {
     events: [],
     usage: initialUsage,
     error: null,
+    quality: null,
   });
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -29,7 +31,7 @@ export function usePipelineWS(initialUsage: UsageSnapshot | null) {
     if (wsRef.current) {
       wsRef.current.close();
     }
-    setState((s) => ({ ...s, running: true, events: [], error: null }));
+    setState((s) => ({ ...s, running: true, events: [], error: null, quality: null }));
 
     // Resolve WS URL: use VITE_API_BASE_URL if set (prod), else same origin (dev proxy).
     const apiBase = (import.meta as any).env?.VITE_API_BASE_URL as string | undefined;
@@ -56,6 +58,7 @@ export function usePipelineWS(initialUsage: UsageSnapshot | null) {
           ...s,
           events: [...s.events, evt],
           usage: evt.usage ?? s.usage,
+          quality: evt.quality ?? s.quality,
           error: evt.event === "error" ? evt.message ?? "Unknown error" : s.error,
         }));
       } catch (err) {

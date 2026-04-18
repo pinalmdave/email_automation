@@ -17,6 +17,8 @@ export default function App() {
   const [tab, setTab] = useState<TabKey>("processed");
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
   const [selectedHours, setSelectedHours] = useState<number>(24);
+  const [selectedMaxIterations, setSelectedMaxIterations] = useState<number>(2);
+  const [selectedThreshold, setSelectedThreshold] = useState<number>(0.80);
   const [selectedModel, setSelectedModel] = useState<string>("claude-sonnet-4-20250514");
   const [pricingOpen, setPricingOpen] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -29,6 +31,8 @@ export default function App() {
     fetchConfig().then((c) => {
       setConfig(c);
       setSelectedHours(c.default_hours || 24);
+      if (c.default_max_iterations) setSelectedMaxIterations(c.default_max_iterations);
+      if (c.default_acceptance_threshold) setSelectedThreshold(c.default_acceptance_threshold);
     }).catch(() => { /* backend may not be up */ });
     fetchUsage().then(setInitialUsage).catch(() => { /* same */ });
   }, []);
@@ -48,9 +52,14 @@ export default function App() {
     }
   }, [pipeline.running, pipeline.events]);
 
+  const qualityPayload = () => ({
+    max_iterations: selectedMaxIterations,
+    acceptance_threshold: selectedThreshold,
+  });
+
   const handleProcessEmails = () => {
     pipeline.start("/ws/process-emails", (ws) => {
-      const payload: Record<string, unknown> = {};
+      const payload: Record<string, unknown> = { ...qualityPayload() };
       if (selectedFolders.length > 0) payload.folders = selectedFolders;
       if (selectedHours > 0) payload.hours = selectedHours;
       ws.send(JSON.stringify(payload));
@@ -59,13 +68,13 @@ export default function App() {
 
   const handleSubmitJD = (jd: string) => {
     pipeline.start("/ws/process-jd", (ws) => {
-      ws.send(JSON.stringify({ job_description: jd }));
+      ws.send(JSON.stringify({ job_description: jd, ...qualityPayload() }));
     });
   };
 
   const handleSubmitURL = (url: string) => {
     pipeline.start("/ws/apply-from-url", (ws) => {
-      ws.send(JSON.stringify({ url }));
+      ws.send(JSON.stringify({ url, ...qualityPayload() }));
     });
     // Switch to Apply History so the user watches the plan land.
     setTab("apply");
@@ -92,6 +101,10 @@ export default function App() {
           onFoldersChange={setSelectedFolders}
           selectedHours={selectedHours}
           onHoursChange={setSelectedHours}
+          selectedMaxIterations={selectedMaxIterations}
+          onMaxIterationsChange={setSelectedMaxIterations}
+          selectedThreshold={selectedThreshold}
+          onThresholdChange={setSelectedThreshold}
           selectedModel={selectedModel}
           onModelChange={setSelectedModel}
           onProcessEmails={handleProcessEmails}
@@ -120,6 +133,7 @@ export default function App() {
                 events={pipeline.events}
                 running={pipeline.running}
                 error={pipeline.error}
+                quality={pipeline.quality}
               />
             </div>
           )}

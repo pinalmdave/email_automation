@@ -33,6 +33,8 @@ from config import (
     GRAPH_RECURSION_LIMIT,
     IMAP_USER,
     MAX_EMAIL_AGE_HOURS,
+    MAX_RESUME_ITERATIONS,
+    RESUME_ACCEPTANCE_THRESHOLD,
     RESUME_OUTPUT_DIR,
     SCAN_FOLDERS,
     STATE_FILE_PATH,
@@ -94,6 +96,10 @@ def _base_state() -> Dict[str, Any]:
         "resume_evaluation_score": 0.0,
         "resume_evaluation_accepted": False,
         "resume_evaluation_done": False,
+        "resume_recommend_decline": False,
+        "resume_decline_reason": "",
+        "max_resume_iterations": 0,          # 0 = use config default
+        "resume_acceptance_threshold": 0.0,  # 0 = use config default
         "followup_emails": [],
         "current_followup_index": 0,
         "current_followup": {},
@@ -108,9 +114,23 @@ def _base_state() -> Dict[str, Any]:
     }
 
 
+def _apply_quality_overrides(
+    st: Dict[str, Any],
+    max_iters: Optional[int] = None,
+    threshold: Optional[float] = None,
+) -> None:
+    """Apply per-run quality knobs from the UI onto a base state dict."""
+    if max_iters and max_iters > 0:
+        st["max_resume_iterations"] = int(max_iters)
+    if threshold and 0.0 < threshold <= 1.0:
+        st["resume_acceptance_threshold"] = float(threshold)
+
+
 def _emails_state(
     folders: Optional[List[str]] = None,
     hours: Optional[int] = None,
+    max_iters: Optional[int] = None,
+    threshold: Optional[float] = None,
 ) -> Dict[str, Any]:
     st = _base_state()
     st["run_recruiter_scan"] = True
@@ -119,19 +139,41 @@ def _emails_state(
         st["scan_folders"] = folders
     if hours:
         st["scan_hours"] = hours
+    _apply_quality_overrides(st, max_iters, threshold)
     return st
 
 
-def _jd_state(jd_text: str) -> Dict[str, Any]:
+def _jd_state(jd_text: str,
+              max_iters: Optional[int] = None,
+              threshold: Optional[float] = None) -> Dict[str, Any]:
     st = _base_state()
     st["job_description_text"] = jd_text
+    _apply_quality_overrides(st, max_iters, threshold)
     return st
 
 
-def _apply_url_state(url: str) -> Dict[str, Any]:
+def _apply_url_state(url: str,
+                     max_iters: Optional[int] = None,
+                     threshold: Optional[float] = None) -> Dict[str, Any]:
     st = _base_state()
     st["job_url"] = url
+    _apply_quality_overrides(st, max_iters, threshold)
     return st
+
+
+def _kickoff_quality(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract max_iters + threshold from a kickoff payload, with clamping."""
+    mi = payload.get("max_iterations")
+    th = payload.get("acceptance_threshold")
+    try:
+        mi_int: Optional[int] = max(1, min(6, int(mi))) if mi is not None else None
+    except (TypeError, ValueError):
+        mi_int = None
+    try:
+        th_f: Optional[float] = max(0.5, min(0.99, float(th))) if th is not None else None
+    except (TypeError, ValueError):
+        th_f = None
+    return {"max_iters": mi_int, "threshold": th_f}
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +237,8 @@ def _serialize_event(node_name: str, update: Dict[str, Any]) -> Dict[str, Any]:
             "score": update.get("resume_evaluation_score", 0.0),
             "accepted": bool(update.get("resume_evaluation_accepted", False)),
             "feedback": update.get("resume_feedback", ""),
+            "recommend_decline": bool(update.get("resume_recommend_decline", False)),
+            "decline_reason": update.get("resume_decline_reason", ""),
         }
     if "resume_iterations" in update:
         payload["iteration"] = update["resume_iterations"]
@@ -215,13 +259,26 @@ async def _stream_pipeline(websocket: WebSocket, initial_state: Dict[str, Any]) 
     the blocking `graph.stream()` iterator step-by-step inside a thread-pool
     via asyncio.to_thread, yielding back to the loop between chunks.
     """
-    logger.info("Pipeline starting — initial flags: jd=%s recruiter=%s followup=%s",
-                bool(initial_state.get("job_description_text")),
-                initial_state.get("run_recruiter_scan"),
-                initial_state.get("run_followup_scan"))
+    logger.info(
+        "Pipeline starting — jd=%s recruiter=%s followup=%s max_iters=%s threshold=%s",
+        bool(initial_state.get("job_description_text")),
+        initial_state.get("run_recruiter_scan"),
+        initial_state.get("run_followup_scan"),
+        initial_state.get("max_resume_iterations") or MAX_RESUME_ITERATIONS,
+        initial_state.get("resume_acceptance_threshold") or RESUME_ACCEPTANCE_THRESHOLD,
+    )
     reset_session()
+    effective_max = int(initial_state.get("max_resume_iterations") or 0) or MAX_RESUME_ITERATIONS
+    effective_thr = float(initial_state.get("resume_acceptance_threshold") or 0.0) or RESUME_ACCEPTANCE_THRESHOLD
     try:
-        await websocket.send_json({"event": "started", "usage": get_snapshot()})
+        await websocket.send_json({
+            "event": "started",
+            "usage": get_snapshot(),
+            "quality": {
+                "max_iterations": effective_max,
+                "acceptance_threshold": effective_thr,
+            },
+        })
     except Exception:  # noqa: BLE001
         logger.exception("Failed to send 'started' event")
         return
@@ -273,6 +330,7 @@ async def ws_process_emails(websocket: WebSocket) -> None:
     await websocket.accept()
     folders: Optional[List[str]] = None
     hours: Optional[int] = None
+    quality: Dict[str, Any] = {"max_iters": None, "threshold": None}
     try:
         payload = await asyncio.wait_for(websocket.receive_json(), timeout=0.5)
         if isinstance(payload, dict):
@@ -282,10 +340,15 @@ async def ws_process_emails(websocket: WebSocket) -> None:
             h = payload.get("hours")
             if isinstance(h, (int, float)) and h > 0:
                 hours = int(h)
+            quality = _kickoff_quality(payload)
     except (asyncio.TimeoutError, WebSocketDisconnect, ValueError):
         pass
 
-    await _stream_pipeline(websocket, _emails_state(folders=folders, hours=hours))
+    await _stream_pipeline(
+        websocket,
+        _emails_state(folders=folders, hours=hours,
+                      max_iters=quality["max_iters"], threshold=quality["threshold"]),
+    )
     try:
         await websocket.close()
     except Exception:
@@ -312,7 +375,11 @@ async def ws_process_jd(websocket: WebSocket) -> None:
         await websocket.close()
         return
 
-    await _stream_pipeline(websocket, _jd_state(jd_text))
+    q = _kickoff_quality(data if isinstance(data, dict) else {})
+    await _stream_pipeline(
+        websocket,
+        _jd_state(jd_text, max_iters=q["max_iters"], threshold=q["threshold"]),
+    )
     try:
         await websocket.close()
     except Exception:
@@ -340,7 +407,11 @@ async def ws_apply_from_url(websocket: WebSocket) -> None:
         await websocket.close()
         return
 
-    await _stream_pipeline(websocket, _apply_url_state(url))
+    q = _kickoff_quality(data if isinstance(data, dict) else {})
+    await _stream_pipeline(
+        websocket,
+        _apply_url_state(url, max_iters=q["max_iters"], threshold=q["threshold"]),
+    )
     try:
         await websocket.close()
     except Exception:
@@ -371,6 +442,10 @@ def config_info() -> Dict[str, Any]:
         "default_folders": list(SCAN_FOLDERS),
         "default_hours": MAX_EMAIL_AGE_HOURS,
         "duration_options_hours": [24, 48, 72, 168],
+        "default_max_iterations": MAX_RESUME_ITERATIONS,
+        "default_acceptance_threshold": RESUME_ACCEPTANCE_THRESHOLD,
+        "max_iteration_options": [1, 2, 3, 4, 5],
+        "threshold_options": [0.70, 0.75, 0.80, 0.85, 0.90],
     }
 
 

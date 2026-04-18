@@ -75,7 +75,8 @@ def supervisor(state: EmailPipelineState) -> Dict[str, Any]:
             # generate→fail→generate loop eating the recursion budget.
             # Terminates the whole run; any remaining emails are picked up
             # on the next invocation (they're still unprocessed in Gmail).
-            if iterations >= MAX_RESUME_ITERATIONS:
+            _max_iters = int(state.get("max_resume_iterations") or 0) or MAX_RESUME_ITERATIONS
+            if iterations >= _max_iters:
                 subject = current_email.get("subject", "(no subject)")
                 logger.error(
                     "Generator failed %d times for '%s' — finalizing run",
@@ -93,15 +94,28 @@ def supervisor(state: EmailPipelineState) -> Dict[str, Any]:
         # accept, regenerate with feedback, or give up at the iteration cap.
         evaluated = state.get("resume_evaluation_done", False)
         accepted = state.get("resume_evaluation_accepted", False)
+        recommend_decline = state.get("resume_recommend_decline", False)
+        # Per-run override from UI, or fall back to config.
+        max_iters = int(state.get("max_resume_iterations") or 0) or MAX_RESUME_ITERATIONS
 
         if not evaluated:
             logger.info("  Supervisor → evaluate_resume_agent (iter %d)", iterations)
             return {"next_node": AGENT_EVALUATE_RESUME}
 
-        if not accepted and iterations < MAX_RESUME_ITERATIONS:
+        # Hard-mismatch short-circuit: evaluator flagged the JD as a wrong
+        # fit — more iterations will just oscillate, so finalize now.
+        if recommend_decline:
+            logger.info(
+                "  Evaluator recommends decline (score %.2f) — finalizing: %s",
+                state.get("resume_evaluation_score", 0.0),
+                state.get("resume_decline_reason", ""),
+            )
+            return {"next_node": NODE_FINALIZE}
+
+        if not accepted and iterations < max_iters:
             logger.info(
                 "  Supervisor → generate_resume_agent (retry %d/%d, score %.2f)",
-                iterations + 1, MAX_RESUME_ITERATIONS,
+                iterations + 1, max_iters,
                 state.get("resume_evaluation_score", 0.0),
             )
             return {

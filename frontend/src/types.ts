@@ -25,6 +25,13 @@ export interface EvaluationInfo {
   score: number;
   accepted: boolean;
   feedback: string;
+  recommend_decline?: boolean;
+  decline_reason?: string;
+}
+
+export interface QualitySettings {
+  max_iterations: number;
+  acceptance_threshold: number;
 }
 
 export interface ProcessedEmail {
@@ -79,6 +86,9 @@ export interface ApplyPlan {
   resume_path: string;
   target_role_title: string;
   staffing_company_name: string;
+  evaluation_score?: number;
+  recommendation?: "apply" | "decline" | "";
+  decline_reason?: string;
   notes: string;
   created_at: string;
   updated_at: string;
@@ -91,6 +101,10 @@ export interface AppConfig {
   default_folders: string[];
   default_hours: number;
   duration_options_hours: number[];
+  default_max_iterations: number;
+  default_acceptance_threshold: number;
+  max_iteration_options: number[];
+  threshold_options: number[];
 }
 
 export interface ProgressEvent {
@@ -106,4 +120,5 @@ export interface ProgressEvent {
   summary?: string;
   usage?: UsageSnapshot;
   message?: string;
+  quality?: QualitySettings;
 }

@@ -37,10 +37,20 @@ def finalize(state: EmailPipelineState) -> Dict[str, Any]:
                 updates["target_role_title"] = resume_json["target_role_title"]
             if resume_json.get("staffing_company_name"):
                 updates["staffing_company_name"] = resume_json["staffing_company_name"]
+        # Surface the evaluator's verdict on the plan so the UI can warn the user.
+        updates["evaluation_score"] = state.get("resume_evaluation_score", 0.0)
+        if state.get("resume_recommend_decline"):
+            updates["recommendation"] = "decline"
+            updates["decline_reason"] = state.get("resume_decline_reason", "")
+        else:
+            updates["recommendation"] = "apply"
+            updates["decline_reason"] = ""
         if updates:
             apply_plans.update(apply_plan_id, **updates)
-            logger.info("Apply plan %s promoted to 'ready' with resume %s",
-                        apply_plan_id, updates.get("resume_filename", ""))
+            logger.info("Apply plan %s updated — status=%s recommendation=%s score=%.2f",
+                        apply_plan_id, updates.get("status", "?"),
+                        updates.get("recommendation", "?"),
+                        updates.get("evaluation_score", 0.0))
 
     parts = []
     if state.get("run_recruiter_scan"):

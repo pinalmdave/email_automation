@@ -10,6 +10,10 @@ interface Props {
   onFoldersChange: (v: string[]) => void;
   selectedHours: number;
   onHoursChange: (v: number) => void;
+  selectedMaxIterations: number;
+  onMaxIterationsChange: (v: number) => void;
+  selectedThreshold: number;
+  onThresholdChange: (v: number) => void;
   onProcessEmails: () => void;
   onOpenPasteJD: () => void;
   onOpenApplyURL: () => void;
@@ -33,6 +37,8 @@ export function DashboardHeader({
   config, usage, running,
   selectedFolders, onFoldersChange,
   selectedHours, onHoursChange,
+  selectedMaxIterations, onMaxIterationsChange,
+  selectedThreshold, onThresholdChange,
   onProcessEmails, onOpenPasteJD, onOpenApplyURL,
   selectedModel, onModelChange,
   onComparePricing, onAddGmail,
@@ -40,6 +46,8 @@ export function DashboardHeader({
   const [foldersOpen, setFoldersOpen] = useState(false);
   const folders = config?.available_folders ?? [];
   const durations = config?.duration_options_hours ?? [24, 48, 72, 168];
+  const iterOptions = config?.max_iteration_options ?? [1, 2, 3, 4, 5];
+  const thresholdOptions = config?.threshold_options ?? [0.70, 0.75, 0.80, 0.85, 0.90];
 
   const folderSummary = useMemo(() => {
     if (selectedFolders.length === 0) return "All defaults";
@@ -118,6 +126,32 @@ export function DashboardHeader({
           >
             {durations.map((h) => (
               <option key={h} value={h}>{h >= 168 ? `${h / 168} week${h/168>1?'s':''}` : `${h}h`}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Resume-loop quality controls */}
+        <div className="ctrl" title="Max times the evaluator-optimizer loop re-generates per email">
+          <label className="ctrl__label">Max iters</label>
+          <select
+            className="select"
+            value={selectedMaxIterations}
+            onChange={(e) => onMaxIterationsChange(Number(e.target.value))}
+          >
+            {iterOptions.map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+        </div>
+        <div className="ctrl" title="Minimum evaluator score to accept a resume">
+          <label className="ctrl__label">Quality</label>
+          <select
+            className="select"
+            value={selectedThreshold}
+            onChange={(e) => onThresholdChange(Number(e.target.value))}
+          >
+            {thresholdOptions.map((t) => (
+              <option key={t} value={t}>{t.toFixed(2)}</option>
             ))}
           </select>
         </div>

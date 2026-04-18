@@ -486,6 +486,27 @@ body {
 .tag--ready     { background: rgba(122,162,255,0.18); color: var(--accent); }
 .tag--applied   { background: rgba(74,222,128,0.15); color: var(--success); }
 .tag--cancelled { background: rgba(154,163,178,0.15); color: var(--text-dim); }
+.tag--decline   { background: rgba(255,107,107,0.15); color: var(--danger); margin-top: 3px; display: inline-block; }
+
+.tbl__row--warn { background: rgba(255,107,107,0.05) !important; }
+.tbl__warn-reason {
+  color: var(--danger);
+  font-size: 11px;
+  font-style: italic;
+  margin-top: 4px;
+  padding: 3px 8px;
+  background: rgba(255,107,107,0.08);
+  border-left: 2px solid var(--danger);
+  border-radius: 2px;
+}
+
+.progress-log__quality {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.3px;
+  font-variant-numeric: tabular-nums;
+}
 
 .tbl__actions { display: flex; flex-wrap: wrap; gap: 6px; }
 

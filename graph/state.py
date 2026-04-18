@@ -47,6 +47,12 @@ class EmailPipelineState(TypedDict):
     resume_evaluation_score: float     # last score 0.0 - 1.0
     resume_evaluation_accepted: bool   # last evaluator verdict
     resume_evaluation_done: bool       # False after generator, True after evaluator
+    resume_recommend_decline: bool     # evaluator flagged a hard JD/profile mismatch
+    resume_decline_reason: str         # one-sentence reason (from evaluator)
+
+    # -- Per-run overrides (UI can set these; else config defaults apply) --
+    max_resume_iterations: int
+    resume_acceptance_threshold: float
 
     # -- Follow-up email processing --
     followup_emails: List[Dict[str, Any]]

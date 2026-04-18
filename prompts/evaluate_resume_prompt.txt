@@ -33,6 +33,11 @@ OVERALL VERDICT
 - `accepted` = true if `score >= 0.80` AND `factual_accuracy >= 0.9`. Otherwise false.
 - `feedback` = 2-5 concrete, imperative sentences the generator must act on. Example: "Replace 'Lead Developer' with 'AI Solutions Architect' in target_role_title. Add LangChain and vector-DB experience to skill_category_1. Experience_2 achievements are too generic — rewrite with measurable AI impact."
 
+**Hard-mismatch decline signal.** If the JD describes a role that fundamentally does not match the candidate's profile in `<knowledge>` — meaning the gap cannot be closed without fabricating experience (e.g. JD is "Senior Actuary — life insurance reserving" but candidate is an AI/Cloud architect with zero actuarial background) — set:
+  - `recommend_decline: true`
+  - `decline_reason`: one short sentence explaining *why* the role is wrong for this profile
+More generator iterations will not help in these cases; the feedback loop will oscillate between fabricating skills and honesty. Flag so the user can skip the posting instead of grinding. Do NOT set decline just because the first draft is weak — only when the JD itself is the wrong fit.
+
 ------------------------------------
 OUTPUT FORMAT
 ------------------------------------
@@ -40,6 +45,8 @@ Return ONLY a JSON object with no markdown fences:
 {
   "score": 0.0-1.0,
   "accepted": true|false,
+  "recommend_decline": true|false,
+  "decline_reason": "one sentence or empty string",
   "feedback": "specific actionable suggestions for the next generator pass",
   "breakdown": {
     "role_fit": 0.0-1.0,

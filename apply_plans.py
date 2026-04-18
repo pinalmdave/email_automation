@@ -96,6 +96,9 @@ def create(
         "resume_path": "",
         "target_role_title": "",
         "staffing_company_name": "",
+        "evaluation_score": 0.0,
+        "recommendation": "",            # "apply" | "decline" — set by finalize
+        "decline_reason": "",             # one-sentence reason from evaluator
         "notes": "",
         "created_at": now,
         "updated_at": now,

@@ -97,23 +97,27 @@ def evaluate_resume(state: EmailPipelineState) -> Dict[str, Any]:
             "resume_evaluation_done": True,
         }
 
+    # Per-run override or fall back to config default.
+    threshold = float(state.get("resume_acceptance_threshold") or 0.0) or RESUME_ACCEPTANCE_THRESHOLD
+
     try:
         verdict = _run_evaluator(email_data, resume_json, iteration)
         score = float(verdict.get("score", 0.0))
         feedback = str(verdict.get("feedback", "")).strip()
-        # The config threshold is a hard floor: the LLM must say accepted
-        # AND clear the numeric bar. If the LLM doesn't emit an accepted
-        # field, fall back to threshold comparison alone.
+        recommend_decline = bool(verdict.get("recommend_decline", False))
+        decline_reason = str(verdict.get("decline_reason", "")).strip()
+        # The threshold is a hard floor: LLM must say accepted AND clear
+        # the numeric bar. If the LLM omits `accepted`, fall back to threshold.
         explicit = verdict.get("accepted")
-        above_threshold = score >= RESUME_ACCEPTANCE_THRESHOLD
+        above_threshold = score >= threshold
         if isinstance(explicit, bool):
             accepted = bool(explicit) and above_threshold
         else:
             accepted = above_threshold
 
         logger.info(
-            "Resume evaluated — iter=%d score=%.2f accepted=%s  feedback=%s",
-            iteration, score, accepted,
+            "Resume evaluated — iter=%d score=%.2f threshold=%.2f accepted=%s decline=%s  feedback=%s",
+            iteration, score, threshold, accepted, recommend_decline,
             (feedback[:140] + "…") if len(feedback) > 140 else feedback,
         )
         return {
@@ -121,6 +125,8 @@ def evaluate_resume(state: EmailPipelineState) -> Dict[str, Any]:
             "resume_evaluation_accepted": accepted,
             "resume_feedback": "" if accepted else feedback,
             "resume_evaluation_done": True,
+            "resume_recommend_decline": recommend_decline,
+            "resume_decline_reason": decline_reason,
         }
     except Exception as exc:  # noqa: BLE001
         logger.error("Resume evaluation failed — auto-accepting: %s", exc, exc_info=True)
@@ -129,4 +135,6 @@ def evaluate_resume(state: EmailPipelineState) -> Dict[str, Any]:
             "resume_evaluation_accepted": True,
             "resume_feedback": "",
             "resume_evaluation_done": True,
+            "resume_recommend_decline": False,
+            "resume_decline_reason": "",
         }
