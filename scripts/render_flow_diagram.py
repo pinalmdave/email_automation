@@ -132,9 +132,12 @@ def render():
                    sub="NEW  •  wraps pasted JD as email")
 
     # right column
-    gen_res  = box(ax, FIG_W - 0.4 - node_wh[0], 5.7, *node_wh,
+    gen_res  = box(ax, FIG_W - 0.4 - node_wh[0], 6.7, *node_wh,
                    "generate_resume_agent", C_AGENT_LLM,
-                   sub="Claude Sonnet  •  JSON → DOCX")
+                   sub="Claude  •  JSON → DOCX  •  uses feedback")
+    eval_res = box(ax, FIG_W - 0.4 - node_wh[0], 5.5, *node_wh,
+                   "evaluate_resume_agent", C_AGENT_LLM,
+                   sub="Claude  •  score + feedback  •  accept/retry")
     anal_fu  = box(ax, FIG_W - 0.4 - node_wh[0], 4.3, *node_wh,
                    "analyze_and_reply_followup_agent", C_AGENT_LLM,
                    sub="Claude Sonnet  •  intent + reply")
@@ -183,14 +186,23 @@ def render():
         (scan_rec,     node_wh, "left",  "right", 0.1),
         (scan_fu,      node_wh, "left",  "right", 0.0),
         (proc_jd,      node_wh, "left",  "right", -0.1),
-        (gen_res,      node_wh, "right", "left",  -0.1),
-        (anal_fu,      node_wh, "right", "left",  0.0),
-        (render_draft, node_wh, "right", "left",  0.1),
+        (gen_res,      node_wh, "right", "left",  -0.15),
+        (eval_res,     node_wh, "right", "left",  -0.05),
+        (anal_fu,      node_wh, "right", "left",  0.05),
+        (render_draft, node_wh, "right", "left",  0.15),
     ]:
         arrow(ax, port(sup, sup_wh, side_to), port(node, wh, side_from),
               color=C_EDGE, lw=1.2, rad=rad)
         arrow(ax, port(node, wh, side_from), port(sup, sup_wh, side_to),
               color="#6b7280", lw=1.0, ls=":", rad=-rad)
+
+    # Evaluator-optimizer loop — visualize the retry path between generator
+    # and evaluator (via supervisor). The curved arrow makes the loop intent
+    # obvious at a glance.
+    arrow(ax, port(gen_res, node_wh, "bottom"), port(eval_res, node_wh, "top"),
+          color=C_AGENT_LLM, lw=1.4, ls="-", rad=0.35, label="resume JSON")
+    arrow(ax, port(eval_res, node_wh, "top"), port(gen_res, node_wh, "bottom"),
+          color=C_AGENT_LLM, lw=1.4, ls="--", rad=0.35, label="feedback (retry)")
 
     # Supervisor → finalize
     arrow(ax, port(sup, sup_wh, "bottom"), port(final, final_wh, "top"),
@@ -206,6 +218,8 @@ def render():
 
     arrow(ax, port(gen_res, node_wh, "bottom"), port(claude, ext_wh, "top"),
           color=C_EXT, lw=1.4, rad=0.3)
+    arrow(ax, port(eval_res, node_wh, "bottom"), port(claude, ext_wh, "top"),
+          color=C_EXT, lw=1.2, rad=0.25)
     arrow(ax, port(anal_fu, node_wh, "bottom"), port(claude, ext_wh, "top"),
           color=C_EXT, lw=1.4, rad=0.2)
 

@@ -224,6 +224,12 @@ def render_and_draft(state: EmailPipelineState) -> Dict[str, Any]:
             "resume_json": {},
             "resume_path": "",
             "recruiter_processed": processed + 1,
+            # Reset evaluator-optimizer loop state for the next email.
+            "resume_iterations": 0,
+            "resume_feedback": "",
+            "resume_evaluation_done": False,
+            "resume_evaluation_accepted": False,
+            "resume_evaluation_score": 0.0,
         }
     except Exception as e:
         logger.error("  FAILED to draft for '%s': %s", subject, e, exc_info=True)
@@ -232,5 +238,10 @@ def render_and_draft(state: EmailPipelineState) -> Dict[str, Any]:
             "current_email": {},
             "resume_json": {},
             "resume_path": "",
+            "resume_iterations": 0,
+            "resume_feedback": "",
+            "resume_evaluation_done": False,
+            "resume_evaluation_accepted": False,
+            "resume_evaluation_score": 0.0,
             "errors": [f"Draft creation failed for '{subject}': {e}"],
         }

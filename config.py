@@ -27,6 +27,12 @@ SCAN_FOLDERS = tuple(
 )
 MAX_EMAIL_AGE_HOURS = int(os.getenv("MAX_EMAIL_AGE_HOURS", "24"))
 
+# === Resume evaluator-optimizer loop ===
+# Max times the generator runs per email before we accept whatever we have.
+MAX_RESUME_ITERATIONS = int(os.getenv("MAX_RESUME_ITERATIONS", "2"))
+# Evaluator's numeric verdict >= threshold is treated as accepted.
+RESUME_ACCEPTANCE_THRESHOLD = float(os.getenv("RESUME_ACCEPTANCE_THRESHOLD", "0.80"))
+
 # === Claude API pricing (USD per 1M tokens) — overridable via .env ===
 # Defaults are for claude-sonnet-4 as of this repo's current CLAUDE_MODEL.
 CLAUDE_INPUT_COST_PER_MTOK = float(os.getenv("CLAUDE_INPUT_COST_PER_MTOK", "3.00"))

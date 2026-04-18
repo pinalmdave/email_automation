@@ -21,12 +21,20 @@ export interface ResumeInfo {
   company: string;
 }
 
+export interface EvaluationInfo {
+  score: number;
+  accepted: boolean;
+  feedback: string;
+}
+
 export interface ProgressEvent {
   event: "started" | "node_complete" | "done" | "error";
   node?: string;
   label?: string;
   current_email?: { subject: string; from_email: string };
   resume?: ResumeInfo;
+  evaluation?: EvaluationInfo;
+  iteration?: number;
   scanned_count?: number;
   errors?: string[];
   summary?: string;

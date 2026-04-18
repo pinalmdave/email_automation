@@ -13,6 +13,7 @@ separate pick-next-email and pick-next-followup nodes.
 import logging
 from typing import Any, Dict
 
+from config import MAX_RESUME_ITERATIONS
 from graph.state import EmailPipelineState
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 NODE_SCAN_RECRUITER   = "scan_recruiter_emails_node"
 AGENT_GENERATE_RESUME = "generate_resume_agent"
+AGENT_EVALUATE_RESUME = "evaluate_resume_agent"
 NODE_RENDER_DRAFT     = "render_and_draft_node"
 NODE_SCAN_FOLLOWUP    = "scan_followup_emails_node"
 AGENT_ANALYZE_REPLY   = "analyze_and_reply_followup_agent"
@@ -58,16 +60,47 @@ def supervisor(state: EmailPipelineState) -> Dict[str, Any]:
     if current_email:
         resume_path = state.get("resume_path", "")
         resume_json = state.get("resume_json", {})
-        if resume_path and resume_json:
-            # Manual-JD flow has no recruiter to reply to — skip drafting.
-            if jd_text:
-                logger.info("  Supervisor → finalize_node (manual JD, skip draft)")
-                return {"next_node": NODE_FINALIZE}
-            logger.info("  Supervisor → render_and_draft_node")
-            return {"next_node": NODE_RENDER_DRAFT}
-        else:
+
+        if not resume_path or not resume_json:
             logger.info("  Supervisor → generate_resume_agent")
             return {"next_node": AGENT_GENERATE_RESUME}
+
+        # Resume generated. Evaluator-optimizer loop decides whether to
+        # accept, regenerate with feedback, or give up at the iteration cap.
+        iterations = state.get("resume_iterations", 0)
+        evaluated = state.get("resume_evaluation_done", False)
+        accepted = state.get("resume_evaluation_accepted", False)
+
+        if not evaluated:
+            logger.info("  Supervisor → evaluate_resume_agent (iter %d)", iterations)
+            return {"next_node": AGENT_EVALUATE_RESUME}
+
+        if not accepted and iterations < MAX_RESUME_ITERATIONS:
+            logger.info(
+                "  Supervisor → generate_resume_agent (retry %d/%d, score %.2f)",
+                iterations + 1, MAX_RESUME_ITERATIONS,
+                state.get("resume_evaluation_score", 0.0),
+            )
+            return {
+                "next_node": AGENT_GENERATE_RESUME,
+                # Clear the rejected resume so the generator runs again
+                # and the "resume already set" check doesn't short-circuit.
+                "resume_path": "",
+                "resume_json": {},
+                "resume_evaluation_done": False,
+            }
+
+        # Accepted, or we've hit the iteration cap — proceed.
+        if not accepted:
+            logger.info(
+                "  Iteration cap hit (%d) — using last resume (score %.2f)",
+                iterations, state.get("resume_evaluation_score", 0.0),
+            )
+        if jd_text:
+            logger.info("  Supervisor → finalize_node (manual JD, skip draft)")
+            return {"next_node": NODE_FINALIZE}
+        logger.info("  Supervisor → render_and_draft_node")
+        return {"next_node": NODE_RENDER_DRAFT}
 
     recruiter_scan_done = state.get("recruiter_scan_done", False)
     if recruiter_scan_done:

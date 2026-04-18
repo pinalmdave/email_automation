@@ -32,6 +32,13 @@ class EmailPipelineState(TypedDict):
     resume_path: str
     recruiter_processed: int
 
+    # -- Resume evaluator-optimizer loop --
+    resume_iterations: int             # incremented by generator each attempt
+    resume_feedback: str               # evaluator's suggestions, fed back to generator
+    resume_evaluation_score: float     # last score 0.0 - 1.0
+    resume_evaluation_accepted: bool   # last evaluator verdict
+    resume_evaluation_done: bool       # False after generator, True after evaluator
+
     # -- Follow-up email processing --
     followup_emails: List[Dict[str, Any]]
     current_followup_index: int

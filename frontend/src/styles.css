@@ -227,6 +227,16 @@ body {
 .log-item__label { color: var(--text); font-weight: 500; }
 .log-item__sub { color: var(--text-dim); font-size: 12px; margin-top: 2px; }
 .log-item__sub--err { color: var(--danger); }
+.log-item__sub--ok { color: var(--success); }
+.log-item__sub--warn { color: #f2c94c; }
+.log-item__feedback {
+  color: var(--text-dim);
+  font-style: italic;
+  margin-top: 3px;
+  padding: 4px 8px;
+  border-left: 2px solid var(--border);
+  font-weight: normal;
+}
 .log-item__sub a { color: var(--accent-2); text-decoration: none; }
 .log-item__sub a:hover { text-decoration: underline; }
 

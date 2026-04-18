@@ -52,11 +52,29 @@ def _extract_json_from_text(text: str) -> Dict[str, Any]:
     raise ValueError(f"Could not parse JSON from Claude response:\n{text[:500]}")
 
 
-def _generate_resume_json(email_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Send recruiter email to Claude and get back structured resume JSON."""
+def _generate_resume_json(
+    email_data: Dict[str, Any],
+    prior_feedback: str = "",
+    iteration: int = 1,
+) -> Dict[str, Any]:
+    """Send recruiter email to Claude and get back structured resume JSON.
+
+    On retries (iteration > 1) the evaluator's feedback from the previous
+    attempt is injected into the user turn so the generator can course-correct.
+    """
     system_prompt = system_prompt_with_knowledge(
         RESUME_PROMPT_PATH.read_text(encoding="utf-8")
     )
+
+    user_payload: Dict[str, Any] = dict(email_data)
+    if prior_feedback:
+        user_payload["_previous_attempt_feedback"] = prior_feedback
+        user_payload["_iteration"] = iteration
+        logger.info(
+            "Regenerating resume (iteration %d) with evaluator feedback: %s",
+            iteration,
+            (prior_feedback[:140] + "…") if len(prior_feedback) > 140 else prior_feedback,
+        )
 
     llm = ChatAnthropic(model=CLAUDE_MODEL, max_tokens=4096)
     # The system prompt + knowledge base is static across calls — mark it
@@ -68,7 +86,7 @@ def _generate_resume_json(email_data: Dict[str, Any]) -> Dict[str, Any]:
             "text": system_prompt,
             "cache_control": {"type": "ephemeral"},
         }]),
-        HumanMessage(content=json.dumps(email_data, ensure_ascii=False)),
+        HumanMessage(content=json.dumps(user_payload, ensure_ascii=False)),
     ])
     record_usage(response)
 
@@ -179,17 +197,39 @@ def _render_resume_docx(resume_json: Dict[str, Any]) -> Path:
 def generate_resume(state: EmailPipelineState) -> Dict[str, Any]:
     """Call Claude to generate resume JSON and render the DOCX."""
     email_data = state["current_email"]
+    iterations = state.get("resume_iterations", 0)
+    prior_feedback = state.get("resume_feedback", "") if iterations > 0 else ""
+    next_iteration = iterations + 1
+
     try:
-        logger.info("  Calling Claude API for resume generation...")
-        resume_json = _generate_resume_json(email_data)
+        logger.info(
+            "  Calling Claude API for resume generation (iteration %d)%s...",
+            next_iteration,
+            " with evaluator feedback" if prior_feedback else "",
+        )
+        resume_json = _generate_resume_json(email_data, prior_feedback, next_iteration)
         logger.info("  Rendering DOCX resume...")
         resume_path = _render_resume_docx(resume_json)
-        return {"resume_json": resume_json, "resume_path": str(resume_path)}
+        return {
+            "resume_json": resume_json,
+            "resume_path": str(resume_path),
+            "resume_iterations": next_iteration,
+            # Mark this iteration as unevaluated so the supervisor routes
+            # to the evaluator next.
+            "resume_evaluation_done": False,
+            "resume_evaluation_accepted": False,
+            # Feedback has been consumed; clear it so stale feedback doesn't
+            # leak into a fresh email's first attempt.
+            "resume_feedback": "",
+        }
     except Exception as e:
         subject = email_data.get("subject", "?")
         logger.error("  FAILED to generate resume for '%s': %s", subject, e, exc_info=True)
         return {
             "resume_json": {},
             "resume_path": "",
+            "resume_iterations": next_iteration,
+            "resume_evaluation_done": True,  # skip evaluator on a hard failure
+            "resume_evaluation_accepted": False,
             "errors": [f"Resume generation failed for '{subject}': {e}"],
         }

@@ -12,6 +12,7 @@ Nodes are classified as:
 from langgraph.graph import END, StateGraph
 
 from agents.analyze_and_reply_followup_agent import analyze_and_reply_followup
+from agents.evaluate_resume_agent import evaluate_resume
 from agents.finalize_node import finalize
 from agents.generate_resume_agent import generate_resume
 from agents.process_job_description_node import process_job_description
@@ -34,6 +35,7 @@ def build_graph() -> StateGraph:
     # -- Agent nodes (call LLM) --
     graph.add_node("supervisor_agent", supervisor)
     graph.add_node("generate_resume_agent", generate_resume)
+    graph.add_node("evaluate_resume_agent", evaluate_resume)
     graph.add_node("analyze_and_reply_followup_agent", analyze_and_reply_followup)
 
     # -- Plain nodes (no LLM) --
@@ -53,6 +55,7 @@ def build_graph() -> StateGraph:
     for node_name in [
         "scan_recruiter_emails_node",
         "generate_resume_agent",
+        "evaluate_resume_agent",
         "render_and_draft_node",
         "scan_followup_emails_node",
         "analyze_and_reply_followup_agent",

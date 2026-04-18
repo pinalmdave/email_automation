@@ -75,6 +75,11 @@ def _base_state() -> Dict[str, Any]:
         "resume_json": {},
         "resume_path": "",
         "recruiter_processed": 0,
+        "resume_iterations": 0,
+        "resume_feedback": "",
+        "resume_evaluation_score": 0.0,
+        "resume_evaluation_accepted": False,
+        "resume_evaluation_done": False,
         "followup_emails": [],
         "current_followup_index": 0,
         "current_followup": {},
@@ -107,6 +112,7 @@ _NODE_LABELS = {
     "supervisor_agent":                  "Supervisor deciding next step",
     "scan_recruiter_emails_node":        "Scanning Gmail for recruiter emails",
     "generate_resume_agent":             "Generating tailored resume (Claude)",
+    "evaluate_resume_agent":             "Evaluating resume quality (Claude)",
     "render_and_draft_node":             "Creating Gmail draft reply",
     "scan_followup_emails_node":         "Scanning for recruiter follow-ups",
     "analyze_and_reply_followup_agent":  "Analyzing follow-up & drafting reply",
@@ -148,6 +154,17 @@ def _serialize_event(node_name: str, update: Dict[str, Any]) -> Dict[str, Any]:
     summary = update.get("summary")
     if summary:
         payload["summary"] = summary
+
+    # Evaluator verdict — surface to the UI so the progress log shows the loop.
+    if "resume_evaluation_done" in update or "resume_evaluation_score" in update:
+        payload["evaluation"] = {
+            "score": update.get("resume_evaluation_score", 0.0),
+            "accepted": bool(update.get("resume_evaluation_accepted", False)),
+            "feedback": update.get("resume_feedback", ""),
+        }
+    if "resume_iterations" in update:
+        payload["iteration"] = update["resume_iterations"]
+
     payload["usage"] = get_snapshot()
     return payload
 

@@ -30,11 +30,15 @@ function renderEvent(evt: ProgressEvent, idx: number) {
     );
   }
   // node_complete
+  const labelSuffix = evt.iteration ? ` (iteration ${evt.iteration})` : "";
   return (
     <li key={idx} className="log-item">
       <span className="dot" />
       <div className="log-item__body">
-        <div className="log-item__label">{evt.label ?? evt.node}</div>
+        <div className="log-item__label">
+          {evt.label ?? evt.node}
+          {labelSuffix}
+        </div>
         {evt.current_email ? (
           <div className="log-item__sub">
             {evt.current_email.subject} · {evt.current_email.from_email}
@@ -42,6 +46,15 @@ function renderEvent(evt: ProgressEvent, idx: number) {
         ) : null}
         {evt.scanned_count !== undefined ? (
           <div className="log-item__sub">{evt.scanned_count} email(s) scanned</div>
+        ) : null}
+        {evt.evaluation ? (
+          <div className={`log-item__sub ${evt.evaluation.accepted ? "log-item__sub--ok" : "log-item__sub--warn"}`}>
+            Score: {evt.evaluation.score.toFixed(2)}{" · "}
+            {evt.evaluation.accepted ? "accepted ✓" : "rejected — regenerating"}
+            {evt.evaluation.feedback ? (
+              <div className="log-item__feedback">{evt.evaluation.feedback}</div>
+            ) : null}
+          </div>
         ) : null}
         {evt.resume ? (
           <div className="log-item__sub">
