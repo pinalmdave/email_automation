@@ -157,37 +157,45 @@ def _serialize_event(node_name: str, update: Dict[str, Any]) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 async def _stream_pipeline(websocket: WebSocket, initial_state: Dict[str, Any]) -> None:
-    """Invoke the LangGraph pipeline and stream per-node progress to the client."""
+    """Invoke the LangGraph pipeline and stream per-node progress to the client.
+
+    The LangGraph graph is synchronous, so each node runs on the event-loop
+    thread. To keep heartbeats alive under Gunicorn's UvicornWorker we execute
+    the blocking `graph.stream()` iterator step-by-step inside a thread-pool
+    via asyncio.to_thread, yielding back to the loop between chunks.
+    """
+    logger.info("Pipeline starting — initial flags: jd=%s recruiter=%s followup=%s",
+                bool(initial_state.get("job_description_text")),
+                initial_state.get("run_recruiter_scan"),
+                initial_state.get("run_followup_scan"))
     reset_session()
-    await websocket.send_json({"event": "started", "usage": get_snapshot()})
     try:
-        # graph.stream is sync — run it in a thread so the event loop stays free
-        # and we can push events as each node completes.
-        loop = asyncio.get_running_loop()
-        queue: asyncio.Queue = asyncio.Queue()
+        await websocket.send_json({"event": "started", "usage": get_snapshot()})
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to send 'started' event")
+        return
 
-        def run_pipeline() -> None:
+    try:
+        stream_iter = _graph.stream(initial_state, {"recursion_limit": 100})
+        sentinel = object()
+
+        def _next_chunk():
             try:
-                for chunk in _graph.stream(initial_state, {"recursion_limit": 100}):
-                    for node_name, update in chunk.items():
-                        loop.call_soon_threadsafe(queue.put_nowait, (node_name, update))
-                loop.call_soon_threadsafe(queue.put_nowait, None)  # sentinel
-            except Exception as exc:  # noqa: BLE001
-                loop.call_soon_threadsafe(queue.put_nowait, exc)
-
-        task = loop.run_in_executor(None, run_pipeline)
+                return next(stream_iter)
+            except StopIteration:
+                return sentinel
 
         while True:
-            item = await queue.get()
-            if item is None:
+            chunk = await asyncio.to_thread(_next_chunk)
+            if chunk is sentinel:
                 break
-            if isinstance(item, Exception):
-                raise item
-            node_name, update = item
-            await websocket.send_json(_serialize_event(node_name, update))
+            for node_name, update in chunk.items():
+                logger.info("Node complete: %s (keys=%s)",
+                            node_name, list((update or {}).keys()))
+                await websocket.send_json(_serialize_event(node_name, update or {}))
 
-        await task  # surface any late exception
         await websocket.send_json({"event": "done", "usage": get_snapshot()})
+        logger.info("Pipeline done")
     except WebSocketDisconnect:
         logger.info("Client disconnected mid-pipeline")
     except Exception as exc:  # noqa: BLE001
