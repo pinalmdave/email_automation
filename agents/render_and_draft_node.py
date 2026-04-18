@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from config import STATE_FILE_PATH
+from gmail_mark import mark_email_processed
 from graph.state import EmailPipelineState
 from pending_replies import create as create_pending_reply
 
@@ -174,6 +175,15 @@ def render_and_draft(state: EmailPipelineState) -> Dict[str, Any]:
             },
         )
         _mark_processed(message_id, subject, from_email, str(resume_path), pending["id"])
+
+        # Mark original email \Seen + apply CLAUDE_PROCESSED so next scan skips it.
+        mark_err = mark_email_processed(
+            email_data.get("folder", "INBOX"),
+            email_data.get("imap_uid", ""),
+        )
+        if mark_err:
+            logger.warning("Gmail label/read mark failed for %s: %s", message_id, mark_err)
+
         logger.info("  Queued pending reply for review: %s (resume=%s)", pending["id"], resume_path.name)
         return {
             "current_email_index": idx + 1,

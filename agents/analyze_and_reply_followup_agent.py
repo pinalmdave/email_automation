@@ -14,6 +14,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from config import CLAUDE_MODEL, PROMPTS_DIR
+from gmail_mark import mark_email_processed
 from graph.state import EmailPipelineState
 from knowledge_base import system_prompt_with_knowledge
 from usage_tracker import record_usage
@@ -139,6 +140,15 @@ def analyze_and_reply_followup(state: EmailPipelineState) -> Dict[str, Any]:
             reply_result.get("intent", "UNKNOWN"),
             reply_result.get("summary", ""),
         )
+
+        # Mark original follow-up \Seen + apply CLAUDE_PROCESSED label.
+        mark_err = mark_email_processed(
+            followup.get("folder", "INBOX"),
+            followup.get("imap_uid", ""),
+        )
+        if mark_err:
+            logger.warning("Gmail label/read mark failed for follow-up %s: %s",
+                           message_id, mark_err)
         logger.info("  Done! Intent: %s", reply_result.get("intent"))
         return {
             "current_followup_index": idx + 1,

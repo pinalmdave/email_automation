@@ -212,7 +212,9 @@ def _scan_for_recruiter_emails(
     mail.login(IMAP_USER, IMAP_PASSWORD)
 
     since = (datetime.now(timezone.utc) - timedelta(hours=hours_window)).strftime("%d-%b-%Y")
-    since_criteria = f"SINCE {since}"
+    # UNSEEN = only unread emails. Once the app queues a pending reply it
+    # marks the original as \Seen, so subsequent scans skip it automatically.
+    since_criteria = f"(UNSEEN SINCE {since})"
 
     all_emails: List[Dict[str, Any]] = []
     seen_message_ids = set()

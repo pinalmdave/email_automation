@@ -148,7 +148,9 @@ def _scan_for_followup_emails(
     mail.login(IMAP_USER, IMAP_PASSWORD)
 
     since = (datetime.now(timezone.utc) - timedelta(hours=hours_window)).strftime("%d-%b-%Y")
-    since_criteria = f"SINCE {since}"
+    # UNSEEN = only unread emails. Follow-ups we've already replied to get
+    # marked \Seen when their pending reply is queued.
+    since_criteria = f"(UNSEEN SINCE {since})"
 
     all_followups: List[Dict[str, Any]] = []
     seen_message_ids = set()
