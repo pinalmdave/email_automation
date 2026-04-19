@@ -4,6 +4,7 @@ import { ApplyHistory } from "./components/ApplyHistory";
 import { ChatUI } from "./components/ChatUI";
 import { Conversations } from "./components/Conversations";
 import { DashboardHeader } from "./components/DashboardHeader";
+import { EmailScan } from "./components/EmailScan";
 import { PricingModal } from "./components/PricingModal";
 import { ProcessedEmails } from "./components/ProcessedEmails";
 import { ProgressLog } from "./components/ProgressLog";
@@ -14,7 +15,7 @@ import type { AppConfig, UsageSnapshot } from "./types";
 export default function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [initialUsage, setInitialUsage] = useState<UsageSnapshot | null>(null);
-  const [tab, setTab] = useState<TabKey>("processed");
+  const [tab, setTab] = useState<TabKey>("email_scan");
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
   const [selectedHours, setSelectedHours] = useState<number>(24);
   const [selectedMaxIterations, setSelectedMaxIterations] = useState<number>(2);
@@ -22,6 +23,7 @@ export default function App() {
   const [selectedModel, setSelectedModel] = useState<string>("claude-sonnet-4-20250514");
   const [pricingOpen, setPricingOpen] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [newEmailCount, setNewEmailCount] = useState(0);
   const [processedCount, setProcessedCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
   const [applyReadyCount, setApplyReadyCount] = useState(0);
@@ -33,19 +35,25 @@ export default function App() {
       setSelectedHours(c.default_hours || 24);
       if (c.default_max_iterations) setSelectedMaxIterations(c.default_max_iterations);
       if (c.default_acceptance_threshold) setSelectedThreshold(c.default_acceptance_threshold);
-    }).catch(() => { /* backend may not be up */ });
-    fetchUsage().then(setInitialUsage).catch(() => { /* same */ });
+    }).catch(() => {});
+    fetchUsage().then(setInitialUsage).catch(() => {});
   }, []);
 
   useEffect(() => {
-    fetchProcessedEmails().then((items) => setProcessedCount(items.length)).catch(() => {});
+    fetchProcessedEmails("new")
+      .then((items) => setNewEmailCount(items.length))
+      .catch(() => {});
+    fetchProcessedEmails()
+      .then((items) => setProcessedCount(
+        items.filter((i) => ["approved", "rejected", "cancelled", "sent"].includes(i.status)).length
+      ))
+      .catch(() => {});
     fetchConversations("pending").then((items) => setPendingCount(items.length)).catch(() => {});
     fetchApplyPlans("all")
       .then((items) => setApplyReadyCount(items.filter((i) => i.status === "ready").length))
       .catch(() => {});
   }, [reloadKey]);
 
-  // Refresh lists whenever the pipeline finishes a run.
   useEffect(() => {
     if (!pipeline.running && pipeline.events.some((e) => e.event === "done")) {
       setReloadKey((k) => k + 1);
@@ -76,7 +84,6 @@ export default function App() {
     pipeline.start("/ws/apply-from-url", (ws) => {
       ws.send(JSON.stringify({ url, ...qualityPayload() }));
     });
-    // Switch to Apply History so the user watches the plan land.
     setTab("apply");
   };
 
@@ -88,8 +95,9 @@ export default function App() {
       <Sidebar
         active={tab}
         onChange={setTab}
-        pendingCount={pendingCount}
+        newEmailCount={newEmailCount}
         processedCount={processedCount}
+        pendingCount={pendingCount}
         applyReadyCount={applyReadyCount}
       />
       <div className="app__main">
@@ -115,8 +123,10 @@ export default function App() {
         />
 
         <div className="app__content">
-          {tab === "processed" ? (
-            <ProcessedEmails reloadKey={reloadKey} />
+          {tab === "email_scan" ? (
+            <EmailScan reloadKey={reloadKey} onChange={() => setReloadKey((k) => k + 1)} />
+          ) : tab === "processed" ? (
+            <ProcessedEmails reloadKey={reloadKey} onChange={() => setReloadKey((k) => k + 1)} />
           ) : tab === "conversations" ? (
             <Conversations reloadKey={reloadKey} onChange={() => setReloadKey((k) => k + 1)} />
           ) : tab === "apply" ? (

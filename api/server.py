@@ -18,6 +18,7 @@ import asyncio
 import json
 import logging
 import os
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -449,34 +450,128 @@ def config_info() -> Dict[str, Any]:
     }
 
 
-@app.get("/api/processed-emails")
-def processed_emails_list() -> Dict[str, Any]:
-    """Return the processed_emails ledger as a list (newest first)."""
+# ---------------------------------------------------------------------------
+# Processed emails — state file helpers
+# ---------------------------------------------------------------------------
+
+_state_lock = threading.RLock()
+
+_TERMINAL_EMAIL_STATUSES = {"new", "approved", "rejected", "cancelled", "sent"}
+
+
+def _normalize_email_status(raw_status: str) -> str:
+    """Map legacy 'processed' (and blank) to 'new'."""
+    return "new" if raw_status in ("processed", "", None) else raw_status
+
+
+def _read_state_raw() -> Dict[str, Any]:
     if not STATE_FILE_PATH.exists():
-        return {"items": []}
+        return {}
     try:
-        raw = json.loads(STATE_FILE_PATH.read_text(encoding="utf-8"))
+        data = json.loads(STATE_FILE_PATH.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
     except (json.JSONDecodeError, OSError):
-        return {"items": []}
+        return {}
+
+
+def _write_state_raw(raw: Dict[str, Any]) -> None:
+    STATE_FILE_PATH.write_text(
+        json.dumps(raw, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    try:
+        from blob_storage import upload_state_file
+        upload_state_file(STATE_FILE_PATH)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _build_email_item(message_id: str, entry: Dict[str, Any]) -> Dict[str, Any]:
+    resume_file = entry.get("resume_file", "")
+    resume_name = Path(resume_file).name if resume_file else ""
+    return {
+        "message_id": message_id,
+        "subject": entry.get("subject", ""),
+        "from_email": entry.get("from_email", ""),
+        "processed_at": entry.get("processed_at", ""),
+        "resume_filename": resume_name,
+        "resume_download_url": f"/api/resume/{resume_name}" if resume_name else "",
+        "pending_reply_id": entry.get("pending_reply_id", ""),
+        "status": _normalize_email_status(entry.get("status", "")),
+    }
+
+
+@app.get("/api/processed-emails")
+def processed_emails_list(status: Optional[str] = None) -> Dict[str, Any]:
+    """Return the processed_emails ledger as a list (newest first).
+
+    Optional ?status= filter: new | approved | rejected | cancelled | sent | all
+    """
+    with _state_lock:
+        raw = _read_state_raw()
 
     items: List[Dict[str, Any]] = []
     for message_id, entry in raw.items():
         if not isinstance(entry, dict):
             continue
-        resume_file = entry.get("resume_file", "")
-        resume_name = Path(resume_file).name if resume_file else ""
-        items.append({
-            "message_id": message_id,
-            "subject": entry.get("subject", ""),
-            "from_email": entry.get("from_email", ""),
-            "processed_at": entry.get("processed_at", ""),
-            "resume_filename": resume_name,
-            "resume_download_url": f"/api/resume/{resume_name}" if resume_name else "",
-            "pending_reply_id": entry.get("pending_reply_id", ""),
-            "status": entry.get("status", "processed"),
-        })
+        item = _build_email_item(message_id, entry)
+        if status and status != "all" and item["status"] != status:
+            continue
+        items.append(item)
     items.sort(key=lambda x: x.get("processed_at", ""), reverse=True)
     return {"items": items}
+
+
+class UpdateEmailStatusBody(BaseModel):
+    status: str
+
+
+@app.patch("/api/processed-emails/{message_id}/status")
+def update_processed_email_status(message_id: str, body: UpdateEmailStatusBody) -> Dict[str, Any]:
+    """Update the review status of a processed email."""
+    if body.status not in _TERMINAL_EMAIL_STATUSES:
+        raise HTTPException(status_code=400, detail=f"Invalid status '{body.status}'")
+    with _state_lock:
+        raw = _read_state_raw()
+        if message_id not in raw:
+            raise HTTPException(status_code=404, detail="Email not found")
+        raw[message_id]["status"] = body.status
+        _write_state_raw(raw)
+        return _build_email_item(message_id, raw[message_id])
+
+
+@app.post("/api/processed-emails/{message_id}/send")
+def send_processed_email_endpoint(message_id: str) -> Dict[str, Any]:
+    """Send the draft email with attached resume via SMTP."""
+    with _state_lock:
+        raw = _read_state_raw()
+        if message_id not in raw:
+            raise HTTPException(status_code=404, detail="Email not found")
+        entry = raw[message_id]
+
+    normalized = _normalize_email_status(entry.get("status", ""))
+    if normalized != "approved":
+        raise HTTPException(status_code=409, detail="Email must be in 'approved' status to send")
+
+    pending_reply_id = entry.get("pending_reply_id", "")
+    if not pending_reply_id:
+        raise HTTPException(status_code=400, detail="No pending reply linked to this email")
+
+    item = pending_replies.get(pending_reply_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Pending reply not found")
+
+    err = send_pending_reply(item)
+    if err:
+        raise HTTPException(status_code=502, detail=f"SMTP send failed: {err}")
+
+    pending_replies.mark_status(pending_reply_id, "sent")
+
+    with _state_lock:
+        raw = _read_state_raw()
+        if message_id in raw:
+            raw[message_id]["status"] = "sent"
+            _write_state_raw(raw)
+        return _build_email_item(message_id, raw.get(message_id, entry))
 
 
 # ---------------------------------------------------------------------------

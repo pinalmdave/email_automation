@@ -25,8 +25,9 @@ export async function fetchUsage(): Promise<UsageSnapshot> {
   return jsonFetch<UsageSnapshot>("/api/usage");
 }
 
-export async function fetchProcessedEmails(): Promise<ProcessedEmail[]> {
-  const r = await jsonFetch<{ items: ProcessedEmail[] }>("/api/processed-emails");
+export async function fetchProcessedEmails(status?: string): Promise<ProcessedEmail[]> {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+  const r = await jsonFetch<{ items: ProcessedEmail[] }>(`/api/processed-emails${qs}`);
   return r.items;
 }
 
@@ -72,6 +73,19 @@ export async function applyPlanCancel(id: string): Promise<ApplyPlan> {
 
 export async function applyPlanDelete(id: string): Promise<void> {
   await jsonFetch<{ deleted: string }>(`/api/apply-plans/${id}`, { method: "DELETE" });
+}
+
+export async function updateProcessedEmailStatus(messageId: string, status: string): Promise<void> {
+  await jsonFetch(`/api/processed-emails/${encodeURIComponent(messageId)}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function sendProcessedEmail(messageId: string): Promise<void> {
+  await jsonFetch(`/api/processed-emails/${encodeURIComponent(messageId)}/send`, {
+    method: "POST",
+  });
 }
 
 export function resumeDownloadHref(downloadUrl: string): string {

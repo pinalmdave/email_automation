@@ -488,6 +488,12 @@ body {
 .tag--cancelled { background: rgba(154,163,178,0.15); color: var(--text-dim); }
 .tag--decline   { background: rgba(255,107,107,0.15); color: var(--danger); margin-top: 3px; display: inline-block; }
 
+/* Processed email review statuses */
+.tag--new       { background: rgba(122,162,255,0.15); color: var(--accent); }
+.tag--approved  { background: rgba(74,222,128,0.15);  color: var(--success); }
+.tag--rejected  { background: rgba(255,107,107,0.15); color: var(--danger); }
+.tag--sent      { background: rgba(79,209,197,0.15);  color: var(--accent-2); }
+
 .tbl__row--warn { background: rgba(255,107,107,0.05) !important; }
 .tbl__warn-reason {
   color: var(--danger);

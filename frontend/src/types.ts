@@ -34,6 +34,8 @@ export interface QualitySettings {
   acceptance_threshold: number;
 }
 
+export type ProcessedEmailStatus = "new" | "approved" | "rejected" | "cancelled" | "sent";
+
 export interface ProcessedEmail {
   message_id: string;
   subject: string;
@@ -42,7 +44,7 @@ export interface ProcessedEmail {
   resume_filename: string;
   resume_download_url: string;
   pending_reply_id: string;
-  status: string;
+  status: ProcessedEmailStatus;
 }
 
 export interface Conversation {
