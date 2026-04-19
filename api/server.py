@@ -460,8 +460,8 @@ _TERMINAL_EMAIL_STATUSES = {"new", "approved", "rejected", "cancelled", "sent"}
 
 
 def _normalize_email_status(raw_status: str) -> str:
-    """Map legacy 'processed' (and blank) to 'new'."""
-    return "new" if raw_status in ("processed", "", None) else raw_status
+    """Map legacy statuses to 'new'."""
+    return "new" if raw_status in ("processed", "pending_review", "", None) else raw_status
 
 
 def _read_state_raw() -> Dict[str, Any]:
@@ -553,12 +553,22 @@ def send_processed_email_endpoint(message_id: str) -> Dict[str, Any]:
         raise HTTPException(status_code=409, detail="Email must be in 'approved' status to send")
 
     pending_reply_id = entry.get("pending_reply_id", "")
-    if not pending_reply_id:
-        raise HTTPException(status_code=400, detail="No pending reply linked to this email")
 
-    item = pending_replies.get(pending_reply_id)
+    # Look up by stored ID first; fall back to searching by original message_id.
+    item = pending_replies.get(pending_reply_id) if pending_reply_id else None
     if not item:
-        raise HTTPException(status_code=404, detail="Pending reply not found")
+        matches = [
+            r for r in pending_replies.list_pending(status=None)
+            if r.get("original", {}).get("message_id") == message_id
+            and r.get("status") not in ("sent", "cancelled")
+        ]
+        item = matches[0] if matches else None
+
+    if not item:
+        raise HTTPException(
+            status_code=400,
+            detail="No draft found for this email. Use the Conversations tab to create one.",
+        )
 
     err = send_pending_reply(item)
     if err:

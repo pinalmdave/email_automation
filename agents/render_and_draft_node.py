@@ -118,7 +118,7 @@ def _mark_processed(
         "from_email": from_email,
         "resume_file": resume_file,
         "pending_reply_id": pending_id,
-        "status": "pending_review",
+        "status": "new",
     }
     STATE_FILE_PATH.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
     try:
