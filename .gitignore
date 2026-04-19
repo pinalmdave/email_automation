@@ -10,3 +10,4 @@ frontend/dist/
 frontend/node_modules/
 .claude/
 deploy.zip
+scripts/train_report.md
