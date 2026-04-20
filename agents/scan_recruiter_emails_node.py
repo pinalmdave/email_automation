@@ -177,20 +177,53 @@ def _search_folder(
     mail: imaplib.IMAP4_SSL, folder: str, since_criteria: str, hours_window: int,
 ) -> List[Dict[str, Any]]:
     try:
-        status, _ = mail.select(folder, readonly=True)
-    except Exception:
+        status, detail = mail.select(folder, readonly=True)
+    except Exception as e:
+        logger.warning("Folder '%s': select raised exception — %s", folder, e)
         return []
     if status != "OK":
+        logger.warning("Folder '%s': select returned %s (%s) — skipping", folder, status, detail)
         return []
 
     _, message_numbers = mail.search(None, since_criteria)
     msg_ids = message_numbers[0].split()
+    logger.info("Folder '%s': %d message(s) match %s", folder, len(msg_ids), since_criteria)
     results = []
     for uid in msg_ids:
         parsed = _fetch_and_parse(mail, uid, folder, hours_window)
         if parsed:
             results.append(parsed)
+    logger.info("Folder '%s': %d passed all filters", folder, len(results))
     return results
+
+
+def list_imap_folders() -> List[str]:
+    """Return all folder/label names visible via IMAP (for the Folders dropdown)."""
+    if not IMAP_USER or not IMAP_PASSWORD:
+        return list(SCAN_FOLDERS)
+    try:
+        mail = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT)
+        mail.login(IMAP_USER, IMAP_PASSWORD)
+        _, folder_list = mail.list()
+        mail.logout()
+        folders = []
+        for item in folder_list or []:
+            line = item.decode() if isinstance(item, bytes) else str(item)
+            # IMAP LIST response: (\Flags) "/" "folder name"  OR  (\Flags) "/" folder
+            # Extract the last token — either quoted or unquoted.
+            line = line.strip()
+            if line.endswith('"'):
+                # Quoted: grab everything between last pair of quotes
+                name = line.rsplit('"', 2)[-2]
+            else:
+                # Unquoted: last space-separated token
+                name = line.rsplit(' ', 1)[-1]
+            if name and not name.startswith('[Gmail]'):
+                folders.append(name)
+        return sorted(folders) if folders else list(SCAN_FOLDERS)
+    except Exception as e:
+        logger.warning("Could not list IMAP folders: %s", e)
+        return list(SCAN_FOLDERS)
 
 
 def _scan_for_recruiter_emails(

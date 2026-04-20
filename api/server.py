@@ -437,9 +437,11 @@ def usage() -> Dict[str, Any]:
 @app.get("/api/config")
 def config_info() -> Dict[str, Any]:
     """UI-facing config defaults — current Gmail account, folders, lookback window."""
+    from agents.scan_recruiter_emails_node import list_imap_folders
+    live_folders = list_imap_folders()
     return {
         "gmail_account": IMAP_USER,
-        "available_folders": list(SCAN_FOLDERS),
+        "available_folders": live_folders,
         "default_folders": list(SCAN_FOLDERS),
         "default_hours": MAX_EMAIL_AGE_HOURS,
         "duration_options_hours": [24, 48, 72, 168],
@@ -448,6 +450,13 @@ def config_info() -> Dict[str, Any]:
         "max_iteration_options": [1, 2, 3, 4, 5],
         "threshold_options": [0.70, 0.75, 0.80, 0.85, 0.90],
     }
+
+
+@app.get("/api/imap-folders")
+def imap_folders() -> Dict[str, Any]:
+    """Return the live list of IMAP folder/label names from Gmail."""
+    from agents.scan_recruiter_emails_node import list_imap_folders
+    return {"folders": list_imap_folders()}
 
 
 # ---------------------------------------------------------------------------
