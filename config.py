@@ -36,7 +36,7 @@ RESUME_ACCEPTANCE_THRESHOLD = float(os.getenv("RESUME_ACCEPTANCE_THRESHOLD", "0.
 # === LangGraph execution ===
 # Max super-steps per graph.invoke(). Heavy recruiter scans with the
 # evaluator loop can consume ~11 super-steps per email — raise if needed.
-GRAPH_RECURSION_LIMIT = int(os.getenv("GRAPH_RECURSION_LIMIT", "25"))
+GRAPH_RECURSION_LIMIT = int(os.getenv("GRAPH_RECURSION_LIMIT", "500"))
 
 # === Claude API pricing (USD per 1M tokens) — overridable via .env ===
 # Defaults are for claude-sonnet-4 as of this repo's current CLAUDE_MODEL.

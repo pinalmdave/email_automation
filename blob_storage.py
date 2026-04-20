@@ -151,9 +151,16 @@ def download_state_file(local_path: Path) -> bool:
 
 
 def bootstrap_state_from_blob() -> None:
-    """Pull all known state files from blob to local disk at process startup."""
+    """Pull all known state files from blob to local disk at process startup.
+
+    Always overwrites local copies so that a stale file bundled in the
+    deployment zip never shadows the live production state stored in blob.
+    """
     if not _use_azure():
         return
     for local_path in _STATE_FILES:
-        if not local_path.exists():
-            download_state_file(local_path)
+        # Always download — don't skip just because a (possibly stale) local
+        # copy exists from the deployment zip.
+        downloaded = download_state_file(local_path)
+        if not downloaded:
+            logger.debug("No blob copy for %s — using local file (or starting fresh)", local_path.name)
