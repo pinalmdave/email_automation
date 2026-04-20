@@ -23,7 +23,7 @@ EXCLUDED_DOMAINS = tuple(
     for d in os.getenv("EXCLUDED_DOMAINS", "linkedin.com,dice.com,monster.com,linked.com,gmail.com").split(",")
 )
 SCAN_FOLDERS = tuple(
-    f.strip() for f in os.getenv("SCAN_FOLDERS", "INBOX,UPDATES").split(",")
+    f.strip() for f in os.getenv("SCAN_FOLDERS", "INBOX,UPDATES,JOBS_INBOX").split(",")
 )
 MAX_EMAIL_AGE_HOURS = int(os.getenv("MAX_EMAIL_AGE_HOURS", "24"))
 
