@@ -205,33 +205,33 @@ def _scan_for_recruiter_emails(
     if not IMAP_USER or not IMAP_PASSWORD:
         raise RuntimeError("IMAP_USER and IMAP_PASSWORD must be set in .env")
 
-    folders_to_scan = tuple(scan_folders) if scan_folders else SCAN_FOLDERS
+    folders_to_scan = list(scan_folders) if scan_folders else list(SCAN_FOLDERS)
     hours_window = scan_hours if (scan_hours and scan_hours > 0) else MAX_EMAIL_AGE_HOURS
+    # Use per-run flag: when user explicitly picks folders, relax UNSEEN
+    # requirement so already-read emails are still picked up.
+    user_selected = bool(scan_folders)
 
     mail = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT)
     mail.login(IMAP_USER, IMAP_PASSWORD)
 
     since = (datetime.now(timezone.utc) - timedelta(hours=hours_window)).strftime("%d-%b-%Y")
-    # UNSEEN = only unread emails. Once the app queues a pending reply it
-    # marks the original as \Seen, so subsequent scans skip it automatically.
-    since_criteria = f"(UNSEEN SINCE {since})"
+    # Default: UNSEEN only — once the app marks an email processed it marks
+    # it \Seen so subsequent scans skip it automatically.
+    # When the user explicitly selects folders they may have already-read
+    # emails they want processed, so drop the UNSEEN requirement.
+    since_criteria = f"(SINCE {since})" if user_selected else f"(UNSEEN SINCE {since})"
 
     all_emails: List[Dict[str, Any]] = []
     seen_message_ids = set()
 
     try:
-        status, folders = mail.list()
-        for f in folders or []:
-            line = f.decode() if isinstance(f, bytes) else str(f)
-            parts = line.split('"')
-            folder_name = parts[-2] if len(parts) >= 2 else ""
-            if folder_name and any(label in folder_name for label in folders_to_scan):
-                logger.info("Scanning folder: %s", folder_name)
-                for parsed in _search_folder(mail, folder_name, since_criteria, hours_window):
-                    mid = parsed.get("message_id", "")
-                    if mid and mid not in seen_message_ids:
-                        seen_message_ids.add(mid)
-                        all_emails.append(parsed)
+        for folder_name in folders_to_scan:
+            logger.info("Scanning folder: %s  (criteria: %s)", folder_name, since_criteria)
+            for parsed in _search_folder(mail, folder_name, since_criteria, hours_window):
+                mid = parsed.get("message_id", "")
+                if mid and mid not in seen_message_ids:
+                    seen_message_ids.add(mid)
+                    all_emails.append(parsed)
     except Exception as e:
         logger.error("Error scanning folders: %s", e)
 
