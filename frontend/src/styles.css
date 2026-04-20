@@ -515,6 +515,10 @@ body {
 }
 
 .tbl__actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.tbl__check { width: 36px; text-align: center; }
+.tbl__row--selected { background: rgba(99,102,241,.08); }
+.btn--sm { padding: 5px 12px; font-size: 13px; }
+.pane__meta { color: var(--text-dim); font-size: 13px; margin-left: 8px; align-self: center; }
 
 /* --- Progress log --- */
 .progress-log { padding: 16px 20px; display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; }

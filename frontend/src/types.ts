@@ -34,7 +34,7 @@ export interface QualitySettings {
   acceptance_threshold: number;
 }
 
-export type ProcessedEmailStatus = "new" | "approved" | "rejected" | "cancelled" | "sent";
+export type ProcessedEmailStatus = "new" | "approved" | "rejected" | "cancelled" | "sent" | "archived";
 
 export interface ProcessedEmail {
   message_id: string;

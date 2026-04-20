@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { bulkArchiveEmails, fetchProcessedEmails, resumeDownloadHref, updateProcessedEmailStatus } from "../api";
+import { bulkUnarchiveEmails, fetchProcessedEmails, resumeDownloadHref } from "../api";
 import type { ProcessedEmail } from "../types";
 
 interface Props {
@@ -12,37 +12,22 @@ function formatDate(iso: string): string {
   try { return new Date(iso).toLocaleString(); } catch { return iso; }
 }
 
-export function EmailScan({ reloadKey, onChange }: Props) {
+export function Archived({ reloadKey, onChange }: Props) {
   const [items, setItems] = useState<ProcessedEmail[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [archiving, setArchiving] = useState(false);
+  const [unarchiving, setUnarchiving] = useState(false);
 
   const reload = () => {
     setLoading(true);
-    fetchProcessedEmails("new")
+    fetchProcessedEmails("archived")
       .then((data) => { setItems(data); setSelected(new Set()); setError(null); })
       .catch((e: Error) => setError(e.message ?? String(e)))
       .finally(() => setLoading(false));
   };
 
   useEffect(reload, [reloadKey]);
-
-  const act = async (messageId: string, status: string) => {
-    setBusyId(messageId);
-    try {
-      await updateProcessedEmailStatus(messageId, status);
-      setItems((prev) => prev.filter((i) => i.message_id !== messageId));
-      setSelected((prev) => { const s = new Set(prev); s.delete(messageId); return s; });
-      onChange();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusyId(null);
-    }
-  };
 
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
@@ -57,29 +42,29 @@ export function EmailScan({ reloadKey, onChange }: Props) {
     setSelected(allChecked ? new Set() : new Set(items.map((i) => i.message_id)));
   };
 
-  const archiveSelected = async () => {
+  const unarchiveSelected = async () => {
     if (selected.size === 0) return;
-    setArchiving(true);
+    setUnarchiving(true);
     try {
-      await bulkArchiveEmails([...selected]);
+      await bulkUnarchiveEmails([...selected]);
       setItems((prev) => prev.filter((i) => !selected.has(i.message_id)));
       setSelected(new Set());
       onChange();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setArchiving(false);
+      setUnarchiving(false);
     }
   };
 
-  if (loading) return <div className="pane pane--loading">Loading new emails…</div>;
+  if (loading) return <div className="pane pane--loading">Loading archived emails…</div>;
   if (error)   return <div className="pane pane--error">Error: {error}</div>;
 
   if (items.length === 0) {
     return (
       <div className="pane pane--empty">
-        <h3>No new emails</h3>
-        <p>Click <b>Process Job Emails</b> in the header to scan your Gmail inbox.</p>
+        <h3>No archived emails</h3>
+        <p>Select emails in <b>Email Scan</b> and click <b>Archive Selected</b> to move them here.</p>
       </div>
     );
   }
@@ -87,16 +72,16 @@ export function EmailScan({ reloadKey, onChange }: Props) {
   return (
     <div className="pane">
       <div className="pane__header">
-        <h2 className="pane__title">New Emails</h2>
-        <div className="pane__meta">{items.length} awaiting review</div>
+        <h2 className="pane__title">Archived</h2>
+        <div className="pane__meta">{items.length} archived</div>
         {selected.size > 0 && (
           <button
             className="btn btn--ghost btn--sm"
-            onClick={archiveSelected}
-            disabled={archiving}
-            title="Move selected emails to Archived"
+            onClick={unarchiveSelected}
+            disabled={unarchiving}
+            title="Move selected back to Email Scan"
           >
-            {archiving ? "Archiving…" : `🗄 Archive Selected (${selected.size})`}
+            {unarchiving ? "Restoring…" : `↩ Unarchive Selected (${selected.size})`}
           </button>
         )}
       </div>
@@ -113,14 +98,12 @@ export function EmailScan({ reloadKey, onChange }: Props) {
             </th>
             <th>Subject</th>
             <th>From</th>
-            <th>Processed</th>
+            <th>Archived</th>
             <th>Resume</th>
-            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
           {items.map((e) => {
-            const busy = busyId === e.message_id;
             const checked = selected.has(e.message_id);
             return (
               <tr key={e.message_id} className={checked ? "tbl__row--selected" : ""}>
@@ -147,40 +130,6 @@ export function EmailScan({ reloadKey, onChange }: Props) {
                   ) : (
                     <span className="tbl__muted">—</span>
                   )}
-                </td>
-                <td className="tbl__actions">
-                  <button
-                    className="btn btn--tiny btn--send"
-                    onClick={() => act(e.message_id, "approved")}
-                    disabled={busy}
-                    title="Approve — move to Processed Emails and enable Send"
-                  >
-                    Approve
-                  </button>
-                  <button
-                    className="btn btn--tiny btn--ghost"
-                    onClick={() => act(e.message_id, "rejected")}
-                    disabled={busy}
-                    title="Reject — move to Processed Emails for regeneration"
-                  >
-                    Reject
-                  </button>
-                  <button
-                    className="btn btn--tiny btn--ghost"
-                    onClick={() => act(e.message_id, "cancelled")}
-                    disabled={busy}
-                    title="Cancel — skip this email"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    className="btn btn--tiny btn--ghost"
-                    onClick={() => act(e.message_id, "archived")}
-                    disabled={busy}
-                    title="Archive this email"
-                  >
-                    🗄
-                  </button>
                 </td>
               </tr>
             );

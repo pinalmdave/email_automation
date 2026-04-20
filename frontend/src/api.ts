@@ -88,6 +88,20 @@ export async function sendProcessedEmail(messageId: string): Promise<void> {
   });
 }
 
+export async function bulkArchiveEmails(messageIds: string[]): Promise<{ count: number }> {
+  return jsonFetch("/api/processed-emails/bulk-status", {
+    method: "POST",
+    body: JSON.stringify({ message_ids: messageIds, status: "archived" }),
+  });
+}
+
+export async function bulkUnarchiveEmails(messageIds: string[]): Promise<{ count: number }> {
+  return jsonFetch("/api/processed-emails/bulk-status", {
+    method: "POST",
+    body: JSON.stringify({ message_ids: messageIds, status: "new" }),
+  });
+}
+
 export function resumeDownloadHref(downloadUrl: string): string {
   if (!downloadUrl) return "";
   return `${BASE}${downloadUrl}`;

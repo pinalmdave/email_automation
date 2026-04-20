@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchApplyPlans, fetchConfig, fetchConversations, fetchProcessedEmails, fetchUsage } from "./api";
 import { ApplyHistory } from "./components/ApplyHistory";
+import { Archived } from "./components/Archived";
 import { ChatUI } from "./components/ChatUI";
 import { Conversations } from "./components/Conversations";
 import { DashboardHeader } from "./components/DashboardHeader";
@@ -25,6 +26,7 @@ export default function App() {
   const [reloadKey, setReloadKey] = useState(0);
   const [newEmailCount, setNewEmailCount] = useState(0);
   const [processedCount, setProcessedCount] = useState(0);
+  const [archivedCount, setArchivedCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
   const [applyReadyCount, setApplyReadyCount] = useState(0);
   const pipeline = usePipelineWS(initialUsage);
@@ -44,9 +46,10 @@ export default function App() {
       .then((items) => setNewEmailCount(items.length))
       .catch(() => {});
     fetchProcessedEmails()
-      .then((items) => setProcessedCount(
-        items.filter((i) => ["approved", "rejected", "cancelled", "sent"].includes(i.status)).length
-      ))
+      .then((items) => {
+        setProcessedCount(items.filter((i) => ["approved", "rejected", "cancelled", "sent"].includes(i.status)).length);
+        setArchivedCount(items.filter((i) => i.status === "archived").length);
+      })
       .catch(() => {});
     fetchConversations("pending").then((items) => setPendingCount(items.length)).catch(() => {});
     fetchApplyPlans("all")
@@ -97,6 +100,7 @@ export default function App() {
         onChange={setTab}
         newEmailCount={newEmailCount}
         processedCount={processedCount}
+        archivedCount={archivedCount}
         pendingCount={pendingCount}
         applyReadyCount={applyReadyCount}
       />
@@ -127,6 +131,8 @@ export default function App() {
             <EmailScan reloadKey={reloadKey} onChange={() => setReloadKey((k) => k + 1)} />
           ) : tab === "processed" ? (
             <ProcessedEmails reloadKey={reloadKey} onChange={() => setReloadKey((k) => k + 1)} />
+          ) : tab === "archived" ? (
+            <Archived reloadKey={reloadKey} onChange={() => setReloadKey((k) => k + 1)} />
           ) : tab === "conversations" ? (
             <Conversations reloadKey={reloadKey} onChange={() => setReloadKey((k) => k + 1)} />
           ) : tab === "apply" ? (

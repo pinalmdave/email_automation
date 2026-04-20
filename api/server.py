@@ -456,7 +456,7 @@ def config_info() -> Dict[str, Any]:
 
 _state_lock = threading.RLock()
 
-_TERMINAL_EMAIL_STATUSES = {"new", "approved", "rejected", "cancelled", "sent"}
+_TERMINAL_EMAIL_STATUSES = {"new", "approved", "rejected", "cancelled", "sent", "archived"}
 
 
 def _normalize_email_status(raw_status: str) -> str:
@@ -582,6 +582,29 @@ def send_processed_email_endpoint(message_id: str) -> Dict[str, Any]:
             raw[message_id]["status"] = "sent"
             _write_state_raw(raw)
         return _build_email_item(message_id, raw.get(message_id, entry))
+
+
+class BulkStatusBody(BaseModel):
+    message_ids: List[str]
+    status: str
+
+
+@app.post("/api/processed-emails/bulk-status")
+def bulk_update_email_status(body: BulkStatusBody) -> Dict[str, Any]:
+    """Set the same status on multiple emails at once (e.g. bulk archive)."""
+    if body.status not in _TERMINAL_EMAIL_STATUSES:
+        raise HTTPException(status_code=400, detail=f"Invalid status '{body.status}'")
+    if not body.message_ids:
+        raise HTTPException(status_code=400, detail="message_ids must not be empty")
+    with _state_lock:
+        raw = _read_state_raw()
+        updated = []
+        for mid in body.message_ids:
+            if mid in raw:
+                raw[mid]["status"] = body.status
+                updated.append(mid)
+        _write_state_raw(raw)
+    return {"updated": updated, "count": len(updated)}
 
 
 # ---------------------------------------------------------------------------
