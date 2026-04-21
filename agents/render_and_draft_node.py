@@ -147,6 +147,13 @@ def render_and_draft(state: EmailPipelineState) -> Dict[str, Any]:
             "current_email": {},
             "resume_json": {},
             "resume_path": "",
+            "resume_iterations": 0,
+            "resume_feedback": "",
+            "resume_evaluation_done": False,
+            "resume_evaluation_accepted": False,
+            "resume_evaluation_score": 0.0,
+            "resume_recommend_decline": False,
+            "resume_decline_reason": "",
         }
 
     resume_path = Path(resume_path_str)
@@ -196,6 +203,8 @@ def render_and_draft(state: EmailPipelineState) -> Dict[str, Any]:
             "resume_evaluation_done": False,
             "resume_evaluation_accepted": False,
             "resume_evaluation_score": 0.0,
+            "resume_recommend_decline": False,
+            "resume_decline_reason": "",
         }
     except Exception as e:
         logger.error("  FAILED to queue pending for '%s': %s", subject, e, exc_info=True)
@@ -209,5 +218,7 @@ def render_and_draft(state: EmailPipelineState) -> Dict[str, Any]:
             "resume_evaluation_done": False,
             "resume_evaluation_accepted": False,
             "resume_evaluation_score": 0.0,
+            "resume_recommend_decline": False,
+            "resume_decline_reason": "",
             "errors": [f"Pending-reply queue failed for '{subject}': {e}"],
         }

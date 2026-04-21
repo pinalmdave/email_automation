@@ -32,6 +32,27 @@ NODE_PROCESS_JOB_URL  = "process_job_url_node"
 NODE_FINALIZE         = "finalize_node"
 
 
+def _clear_email_state(state: EmailPipelineState) -> Dict[str, Any]:
+    """
+    Return the state delta that skips the current email and resets all
+    per-email resume fields. The caller must also set `next_node`.
+
+    Does NOT touch current_email_index — callers must increment that
+    themselves so the supervisor picks up the NEXT email on re-entry.
+    """
+    return {
+        "current_email": {},
+        "resume_json": {},
+        "resume_path": "",
+        "resume_iterations": 0,
+        "resume_feedback": "",
+        "resume_evaluation_done": False,
+        "resume_evaluation_accepted": False,
+        "resume_recommend_decline": False,
+        "resume_evaluation_score": 0.0,
+    }
+
+
 def supervisor(state: EmailPipelineState) -> Dict[str, Any]:
     """
     Examine pipeline state and decide the next agent to invoke.
@@ -71,21 +92,21 @@ def supervisor(state: EmailPipelineState) -> Dict[str, Any]:
 
         if not resume_path or not resume_json:
             # Safety net: if the generator has already failed MAX times
-            # without producing a resume, stop to avoid an infinite
-            # generate→fail→generate loop eating the recursion budget.
-            # Terminates the whole run; any remaining emails are picked up
-            # on the next invocation (they're still unprocessed in Gmail).
+            # without producing a resume, skip this email and move on so
+            # the remaining emails in the batch are still processed.
             _max_iters = int(state.get("max_resume_iterations") or 0) or MAX_RESUME_ITERATIONS
             if iterations >= _max_iters:
                 subject = current_email.get("subject", "(no subject)")
+                idx = state.get("current_email_index", 0)
                 logger.error(
-                    "Generator failed %d times for '%s' — finalizing run",
-                    iterations, subject,
+                    "Generator failed %d times for '%s' — skipping, next email index=%d",
+                    iterations, subject, idx + 1,
                 )
-                return {
-                    "next_node": NODE_FINALIZE,
-                    "errors": [f"Gave up on '{subject}' after {iterations} failed generations"],
-                }
+                skip = _clear_email_state(state)
+                skip["next_node"] = "supervisor_agent"   # self-loop: pick up next email
+                skip["current_email_index"] = idx + 1
+                skip["errors"] = [f"Gave up on '{subject}' after {iterations} failed generations"]
+                return skip
 
             logger.info("  Supervisor → generate_resume_agent")
             return {"next_node": AGENT_GENERATE_RESUME}
@@ -103,14 +124,22 @@ def supervisor(state: EmailPipelineState) -> Dict[str, Any]:
             return {"next_node": AGENT_EVALUATE_RESUME}
 
         # Hard-mismatch short-circuit: evaluator flagged the JD as a wrong
-        # fit — more iterations will just oscillate, so finalize now.
+        # fit — skip this email and continue with the remaining batch.
         if recommend_decline:
+            subject = current_email.get("subject", "(no subject)")
+            idx = state.get("current_email_index", 0)
             logger.info(
-                "  Evaluator recommends decline (score %.2f) — finalizing: %s",
+                "  Evaluator recommends decline (score %.2f) for '%s' — skipping, "
+                "next email index=%d. Reason: %s",
                 state.get("resume_evaluation_score", 0.0),
+                subject,
+                idx + 1,
                 state.get("resume_decline_reason", ""),
             )
-            return {"next_node": NODE_FINALIZE}
+            skip = _clear_email_state(state)
+            skip["next_node"] = "supervisor_agent"   # self-loop: pick up next email
+            skip["current_email_index"] = idx + 1
+            return skip
 
         if not accepted and iterations < max_iters:
             logger.info(
@@ -154,10 +183,10 @@ def supervisor(state: EmailPipelineState) -> Dict[str, Any]:
                 email_data.get("from_email", "(unknown)"),
             )
             logger.info("  Supervisor → generate_resume_agent")
-            return {
-                "next_node": AGENT_GENERATE_RESUME,
-                "current_email": email_data,
-            }
+            reset = _clear_email_state(state)
+            reset["next_node"] = AGENT_GENERATE_RESUME
+            reset["current_email"] = email_data
+            return reset
 
     if not recruiter_scan_done and state.get("run_recruiter_scan", False):
         logger.info("=" * 60)
