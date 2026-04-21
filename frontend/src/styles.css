@@ -43,15 +43,15 @@ body {
   display: flex;
 }
 .app__progress-dock {
-  max-height: 200px;
-  min-height: 120px;
+  max-height: 280px;
+  min-height: 140px;
   border-top: 1px solid var(--border);
   background: var(--bg-alt);
-  padding: 4px 8px;
+  padding: 0;
   overflow: hidden;
   display: flex;
 }
-.app__progress-dock > * { flex: 1; }
+.app__progress-dock > * { flex: 1; min-width: 0; }
 
 /* --- Sidebar --- */
 .sidebar {
@@ -398,7 +398,7 @@ body {
 /* --- Chat layout (JD tab) --- */
 .chat-layout {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -601,11 +601,46 @@ body {
 .modal__header h3 { margin: 0; font-size: 16px; }
 .modal__note { color: var(--text-dim); font-size: 12px; margin: 4px 0 16px; }
 
+/* --- Pipeline Graph --- */
+@keyframes pulse-node {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.55; }
+}
+@keyframes dash {
+  to { stroke-dashoffset: -18; }
+}
+.pipeline-graph {
+  display: flex;
+  flex-direction: column;
+  background: #080d1a;
+  border-left: 1px solid var(--border);
+  padding: 6px 10px 4px;
+  overflow: hidden;
+}
+.pipeline-graph__title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  margin-bottom: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+.pipeline-graph svg {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+}
+
 /* --- Responsive --- */
 @media (max-width: 900px) {
   .app { grid-template-columns: 1fr; }
   .sidebar { display: none; }
-  .chat-layout { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+  .chat-layout { grid-template-columns: 1fr; grid-template-rows: 1fr auto auto auto; }
   .pane--split { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
   .conv-list { max-height: 200px; border-right: none; border-bottom: 1px solid var(--border); }
 }

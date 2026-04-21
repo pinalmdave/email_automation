@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { fetchApplyPlans, fetchConfig, fetchConversations, fetchProcessedEmails, fetchUsage } from "./api";
 import { ApplyHistory } from "./components/ApplyHistory";
 import { Archived } from "./components/Archived";
+import { PipelineGraph } from "./components/PipelineGraph";
 import { ChatUI } from "./components/ChatUI";
 import { Conversations } from "./components/Conversations";
 import { DashboardHeader } from "./components/DashboardHeader";
@@ -151,6 +152,7 @@ export default function App() {
                 error={pipeline.error}
                 quality={pipeline.quality}
               />
+              <PipelineGraph events={pipeline.events} running={pipeline.running} />
             </div>
           )}
         </div>
@@ -164,6 +166,7 @@ export default function App() {
               error={pipeline.error}
               quality={pipeline.quality}
             />
+            <PipelineGraph events={pipeline.events} running={pipeline.running} />
           </div>
         ) : null}
       </div>
