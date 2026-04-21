@@ -85,6 +85,22 @@ CORE SKILLS RULES
 - Limit each category to 8-10 skills.
 
 ------------------------------------
+EXPERIENCE CONTEXT RULE (CRITICAL — READ CAREFULLY)
+------------------------------------
+
+The DOCX template already renders the experience heading (job title | company | dates) as
+a styled block. The `experience_N_context` field MUST NOT repeat that information.
+
+`experience_N_context` must be a SINGLE brief sentence (1 line) that describes the
+SCOPE or NATURE of the role — what the position was about, the team/domain/mission.
+It must NOT contain: the job title, the company name, dates, or any heading-style text.
+
+BAD  → "Senior Architect Lead Developer at Hexaware Technologies (Nov 2024 - Present)"
+BAD  → "Senior Architect | Hexaware Technologies | Nov 2024 – Present"
+GOOD → "Led enterprise AI and cloud modernization programs for Fortune 500 clients across North America."
+GOOD → "Architected multi-cloud platforms serving global insurance and reinsurance operations."
+
+------------------------------------
 EXPERIENCE ACHIEVEMENTS RULE (MANDATORY)
 ------------------------------------
 
@@ -178,6 +194,7 @@ FIELD GUIDANCE
 - client_name: Extracted client name. Null if not determinable.
 - staffing_company_name: Extract the name of the sender's company from the sender's email domain or from the sender's email signature.
 - confidence_score: A numeric value between 0.0 and 1.0 indicating the extent of resume alignment with the job description. Use a conservative scoring model.
+- experience_N_context: ONE sentence describing the scope/mission of the role. NEVER include job title, company name, or dates — those are already rendered by the DOCX template heading. Including them will create a duplicate heading in the output document.
 - from_email: As received from Input JSON
 - to_email: As received from Input JSON
 - subject: As received from Input JSON
