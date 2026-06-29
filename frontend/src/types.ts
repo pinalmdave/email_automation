@@ -103,6 +103,7 @@ export interface AppConfig {
   default_folders: string[];
   default_hours: number;
   duration_options_hours: number[];
+  auto_apply_duration_options_hours?: number[];
   default_max_iterations: number;
   default_acceptance_threshold: number;
   max_iteration_options: number[];

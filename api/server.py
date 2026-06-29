@@ -144,6 +144,32 @@ def _emails_state(
     return st
 
 
+# Allowed lookback windows for the Auto-Apply inbox scan (hours).
+_AUTO_APPLY_HOURS = (24, 48, 72, 120)
+
+
+def _auto_apply_state(
+    hours: Optional[int] = None,
+    max_iters: Optional[int] = None,
+    threshold: Optional[float] = None,
+) -> Dict[str, Any]:
+    """State for Auto-Apply: scan the INBOX for NEW job positions only.
+
+    Runs the recruiter scan (and the resume generate/evaluate/draft loop) but
+    skips the follow-up-reply scan, so it focuses purely on applying to fresh
+    positions. Generated drafts land in New Emails / Conversations for 1-click
+    review and send — nothing is emailed automatically.
+    """
+    st = _base_state()
+    st["run_recruiter_scan"] = True
+    st["run_followup_scan"] = False
+    st["scan_folders"] = ["INBOX"]
+    if hours:
+        st["scan_hours"] = hours
+    _apply_quality_overrides(st, max_iters, threshold)
+    return st
+
+
 def _jd_state(jd_text: str,
               max_iters: Optional[int] = None,
               threshold: Optional[float] = None) -> Dict[str, Any]:
@@ -356,6 +382,42 @@ async def ws_process_emails(websocket: WebSocket) -> None:
         pass
 
 
+@app.websocket("/ws/auto-apply")
+async def ws_auto_apply(websocket: WebSocket) -> None:
+    """
+    Auto-Apply: scan the Gmail INBOX for new job positions within the selected
+    lookback window, generate a tailored resume for each, and queue every
+    application as a draft for 1-click review/send. Recruiter scan only — the
+    follow-up-reply scan is skipped.
+
+    Protocol: client sends a kickoff JSON:
+        {"hours": 24|48|72|120, "max_iterations": N, "acceptance_threshold": F}
+    `hours` is clamped to the allowed set; anything else falls back to 24.
+    """
+    await websocket.accept()
+    hours: int = 24
+    quality: Dict[str, Any] = {"max_iters": None, "threshold": None}
+    try:
+        payload = await asyncio.wait_for(websocket.receive_json(), timeout=0.5)
+        if isinstance(payload, dict):
+            h = payload.get("hours")
+            if isinstance(h, (int, float)) and int(h) in _AUTO_APPLY_HOURS:
+                hours = int(h)
+            quality = _kickoff_quality(payload)
+    except (asyncio.TimeoutError, WebSocketDisconnect, ValueError):
+        pass
+
+    await _stream_pipeline(
+        websocket,
+        _auto_apply_state(hours=hours,
+                          max_iters=quality["max_iters"], threshold=quality["threshold"]),
+    )
+    try:
+        await websocket.close()
+    except Exception:
+        pass
+
+
 @app.websocket("/ws/process-jd")
 async def ws_process_jd(websocket: WebSocket) -> None:
     """
@@ -445,6 +507,7 @@ def config_info() -> Dict[str, Any]:
         "default_folders": list(SCAN_FOLDERS),
         "default_hours": MAX_EMAIL_AGE_HOURS,
         "duration_options_hours": [24, 48, 72, 168],
+        "auto_apply_duration_options_hours": list(_AUTO_APPLY_HOURS),
         "default_max_iterations": MAX_RESUME_ITERATIONS,
         "default_acceptance_threshold": RESUME_ACCEPTANCE_THRESHOLD,
         "max_iteration_options": [1, 2, 3, 4, 5],

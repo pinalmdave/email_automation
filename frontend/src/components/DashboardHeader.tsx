@@ -17,6 +17,9 @@ interface Props {
   onProcessEmails: () => void;
   onOpenPasteJD: () => void;
   onOpenApplyURL: () => void;
+  selectedAutoApplyHours: number;
+  onAutoApplyHoursChange: (v: number) => void;
+  onAutoApply: () => void;
   selectedModel: string;
   onModelChange: (m: string) => void;
   onComparePricing: () => void;
@@ -40,12 +43,14 @@ export function DashboardHeader({
   selectedMaxIterations, onMaxIterationsChange,
   selectedThreshold, onThresholdChange,
   onProcessEmails, onOpenPasteJD, onOpenApplyURL,
+  selectedAutoApplyHours, onAutoApplyHoursChange, onAutoApply,
   selectedModel, onModelChange,
   onComparePricing, onAddGmail,
 }: Props) {
   const [foldersOpen, setFoldersOpen] = useState(false);
   const folders = config?.available_folders ?? [];
   const durations = config?.duration_options_hours ?? [24, 48, 72, 168];
+  const autoApplyDurations = config?.auto_apply_duration_options_hours ?? [24, 48, 72, 120];
   const iterOptions = config?.max_iteration_options ?? [1, 2, 3, 4, 5];
   const thresholdOptions = config?.threshold_options ?? [0.70, 0.75, 0.80, 0.85, 0.90];
 
@@ -186,6 +191,24 @@ export function DashboardHeader({
         <button className="btn btn--primary" onClick={onProcessEmails} disabled={running}>
           {running ? "Processing…" : "Process Job Emails"}
         </button>
+
+        {/* Auto-Apply: scan INBOX for new positions within the chosen lookback */}
+        <div className="ctrl ctrl--inline" title="Scan INBOX for new job positions in this lookback window, generate a resume for each, and queue drafts for 1-click review">
+          <select
+            className="select"
+            value={selectedAutoApplyHours}
+            onChange={(e) => onAutoApplyHoursChange(Number(e.target.value))}
+            disabled={running}
+            aria-label="Auto-Apply lookback window"
+          >
+            {autoApplyDurations.map((h) => (
+              <option key={h} value={h}>{h}h</option>
+            ))}
+          </select>
+          <button className="btn btn--primary" onClick={onAutoApply} disabled={running}>
+            {running ? "Working…" : "Auto-Apply"}
+          </button>
+        </div>
       </div>
     </header>
   );

@@ -20,6 +20,7 @@ export default function App() {
   const [tab, setTab] = useState<TabKey>("email_scan");
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
   const [selectedHours, setSelectedHours] = useState<number>(24);
+  const [selectedAutoApplyHours, setSelectedAutoApplyHours] = useState<number>(24);
   const [selectedMaxIterations, setSelectedMaxIterations] = useState<number>(2);
   const [selectedThreshold, setSelectedThreshold] = useState<number>(0.80);
   const [selectedModel, setSelectedModel] = useState<string>("claude-sonnet-4-20250514");
@@ -78,6 +79,13 @@ export default function App() {
     });
   };
 
+  const handleAutoApply = () => {
+    pipeline.start("/ws/auto-apply", (ws) => {
+      ws.send(JSON.stringify({ hours: selectedAutoApplyHours, ...qualityPayload() }));
+    });
+    setTab("email_scan");
+  };
+
   const handleSubmitJD = (jd: string) => {
     pipeline.start("/ws/process-jd", (ws) => {
       ws.send(JSON.stringify({ job_description: jd, ...qualityPayload() }));
@@ -123,6 +131,9 @@ export default function App() {
           onProcessEmails={handleProcessEmails}
           onOpenPasteJD={handleOpenPasteJD}
           onOpenApplyURL={handleOpenApplyURL}
+          selectedAutoApplyHours={selectedAutoApplyHours}
+          onAutoApplyHoursChange={setSelectedAutoApplyHours}
+          onAutoApply={handleAutoApply}
           onComparePricing={() => setPricingOpen(true)}
           onAddGmail={() => alert("Adding another Gmail account is coming soon.")}
         />
