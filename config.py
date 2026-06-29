@@ -15,7 +15,7 @@ IMAP_PASSWORD = os.getenv("IMAP_PASSWORD", "")
 
 # === Claude / Anthropic ===
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-20250514")
+CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-4-8")
 
 # === Email Filtering ===
 EXCLUDED_DOMAINS = tuple(
@@ -39,11 +39,11 @@ RESUME_ACCEPTANCE_THRESHOLD = float(os.getenv("RESUME_ACCEPTANCE_THRESHOLD", "0.
 GRAPH_RECURSION_LIMIT = int(os.getenv("GRAPH_RECURSION_LIMIT", "500"))
 
 # === Claude API pricing (USD per 1M tokens) — overridable via .env ===
-# Defaults are for claude-sonnet-4 as of this repo's current CLAUDE_MODEL.
-CLAUDE_INPUT_COST_PER_MTOK = float(os.getenv("CLAUDE_INPUT_COST_PER_MTOK", "3.00"))
-CLAUDE_OUTPUT_COST_PER_MTOK = float(os.getenv("CLAUDE_OUTPUT_COST_PER_MTOK", "15.00"))
-CLAUDE_CACHE_WRITE_COST_PER_MTOK = float(os.getenv("CLAUDE_CACHE_WRITE_COST_PER_MTOK", "3.75"))
-CLAUDE_CACHE_READ_COST_PER_MTOK = float(os.getenv("CLAUDE_CACHE_READ_COST_PER_MTOK", "0.30"))
+# Defaults are for claude-opus-4-8 as of this repo's current CLAUDE_MODEL.
+CLAUDE_INPUT_COST_PER_MTOK = float(os.getenv("CLAUDE_INPUT_COST_PER_MTOK", "5.00"))
+CLAUDE_OUTPUT_COST_PER_MTOK = float(os.getenv("CLAUDE_OUTPUT_COST_PER_MTOK", "25.00"))
+CLAUDE_CACHE_WRITE_COST_PER_MTOK = float(os.getenv("CLAUDE_CACHE_WRITE_COST_PER_MTOK", "6.25"))
+CLAUDE_CACHE_READ_COST_PER_MTOK = float(os.getenv("CLAUDE_CACHE_READ_COST_PER_MTOK", "0.50"))
 
 # === Paths ===
 TEMPLATES_DIR = BASE_DIR / "templates"
