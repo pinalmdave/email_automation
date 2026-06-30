@@ -21,6 +21,7 @@ class EmailPipelineState(TypedDict):
     scan_hours: int                # lookback window in hours
     scan_unread_only: bool         # True = only unread emails (default); False = include read
     target_roles: List[str]        # only process emails matching these roles (empty = default AI/Cloud filter)
+    job_location_filter: str       # only process emails matching this location (empty = any; unknown always passes)
 
     # -- Per-run Claude model (UI selection; falls back to CLAUDE_MODEL) --
     selected_model: str

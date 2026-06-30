@@ -22,6 +22,8 @@ interface Props {
   onModelChange: (m: string) => void;
   targetRoles: string;
   onTargetRolesChange: (v: string) => void;
+  jobLocation: string;
+  onJobLocationChange: (v: string) => void;
   onComparePricing: () => void;
   accounts: EmailAccount[];
   onActivateAccount: (id: string) => void;
@@ -44,6 +46,7 @@ export function DashboardHeader({
   selectedAutoApplyHours, onAutoApplyHoursChange, onAutoApply,
   selectedModel, onModelChange,
   targetRoles, onTargetRolesChange,
+  jobLocation, onJobLocationChange,
   onComparePricing,
   accounts, onActivateAccount, onOpenAccounts,
 }: Props) {
@@ -207,6 +210,18 @@ export function DashboardHeader({
             placeholder="e.g. AI Architect, AI Engineer, Cloud Architect"
             value={targetRoles}
             onChange={(e) => onTargetRolesChange(e.target.value)}
+          />
+        </div>
+
+        {/* Job location */}
+        <div className="ctrl" title="Only process emails matching this location. 'remote' = remote roles only. Emails with no detectable location are always processed.">
+          <label className="ctrl__label">Job Location</label>
+          <input
+            className="select input--text"
+            type="text"
+            placeholder="e.g. Remote, or Austin, TX"
+            value={jobLocation}
+            onChange={(e) => onJobLocationChange(e.target.value)}
           />
         </div>
 

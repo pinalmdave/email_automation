@@ -26,6 +26,7 @@ export default function App() {
   const [selectedThreshold, setSelectedThreshold] = useState<number>(0.80);
   const [selectedModel, setSelectedModel] = useState<string>("claude-opus-4-8");
   const [targetRoles, setTargetRoles] = useState<string>("");
+  const [jobLocation, setJobLocation] = useState<string>("");
   const [accounts, setAccounts] = useState<EmailAccount[]>([]);
   const [pricingOpen, setPricingOpen] = useState(false);
   const [accountsOpen, setAccountsOpen] = useState(false);
@@ -80,6 +81,7 @@ export default function App() {
     acceptance_threshold: selectedThreshold,
     model: selectedModel,
     target_roles: targetRoles,
+    job_location: jobLocation,
   });
 
   const handleProcessEmails = () => {
@@ -151,6 +153,8 @@ export default function App() {
             onModelChange={setSelectedModel}
             targetRoles={targetRoles}
             onTargetRolesChange={setTargetRoles}
+            jobLocation={jobLocation}
+            onJobLocationChange={setJobLocation}
             onProcessEmails={handleProcessEmails}
             selectedAutoApplyHours={selectedAutoApplyHours}
             onAutoApplyHoursChange={setSelectedAutoApplyHours}

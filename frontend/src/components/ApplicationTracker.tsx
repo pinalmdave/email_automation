@@ -27,11 +27,12 @@ const STATUS_LABELS: Record<string, string> = {
 const VISIBLE_STATUSES = ["new", "approved", "rejected", "cancelled", "sent"];
 
 const COLUMNS = [
-  { key: "status",   label: "Status",            width: 130 },
-  { key: "subject",  label: "Subject",           width: 360 },
-  { key: "from",     label: "From",              width: 240 },
-  { key: "date",     label: "Processing Date",   width: 180 },
-  { key: "resume",   label: "Generated Resume",  width: 220 },
+  { key: "status",   label: "Status",            width: 120 },
+  { key: "subject",  label: "Subject",           width: 320 },
+  { key: "from",     label: "From",              width: 220 },
+  { key: "location", label: "Job Location",      width: 150 },
+  { key: "date",     label: "Processing Date",   width: 170 },
+  { key: "resume",   label: "Generated Resume",  width: 200 },
   { key: "actions",  label: "Actions",           width: 320 },
 ];
 
@@ -186,6 +187,7 @@ export function ApplicationTracker({ reloadKey, onChange }: Props) {
                 <td><span className={`tag tag--${e.status}`}>{STATUS_LABELS[e.status] ?? e.status}</span></td>
                 <td className="tbl__subject" title={e.subject}>{e.subject || "(no subject)"}</td>
                 <td className="tbl__from" title={e.from_email}>{e.from_email}</td>
+                <td title={e.job_location || ""}>{e.job_location ? e.job_location : <span className="tbl__muted">—</span>}</td>
                 <td className="tbl__date">{formatDate(e.processed_at)}</td>
                 <td>
                   {e.resume_filename ? (

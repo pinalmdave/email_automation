@@ -41,6 +41,7 @@ export interface ProcessedEmail {
   subject: string;
   from_email: string;
   processed_at: string;
+  job_location?: string;
   resume_filename: string;
   resume_download_url: string;
   pending_reply_id: string;

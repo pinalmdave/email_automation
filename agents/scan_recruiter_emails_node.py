@@ -101,6 +101,59 @@ def _email_passes_roles(subject: str, body: str, target_roles: List[str]) -> boo
     return any(role in text for role in roles)
 
 
+# --- Job-location extraction (heuristic, no LLM) ------------------------------
+_REMOTE_RE = re.compile(
+    r"\b(100%\s*remote|fully\s*remote|remote\s*(?:position|role|opportunity|job|work)?|"
+    r"work\s*from\s*home|telecommut\w*|\bwfh\b)\b",
+    re.I,
+)
+# "Location: City, ST"  /  "based in City, ST"  /  "onsite in City, ST"
+_LABELED_LOC_RE = re.compile(
+    r"(?:location|located in|based in|onsite in|office in|position is in)\s*[:\-]?\s*"
+    r"([A-Za-z][A-Za-z .'\-]{1,40},\s*[A-Za-z]{2,})",
+    re.I,
+)
+# Generic "City, ST" (two-letter state)
+_CITY_ST_RE = re.compile(r"\b([A-Z][a-zA-Z.'\-]+(?:\s+[A-Z][a-zA-Z.'\-]+){0,2},\s*[A-Z]{2})\b")
+
+
+def _clean_loc(s: str) -> str:
+    return re.sub(r"\s+", " ", (s or "")).strip(" .,-")
+
+
+def _extract_job_location(subject: str, body: str) -> str:
+    """Best-effort job location from subject/body. Returns '' if undeterminable."""
+    text = (subject or "") + "  " + (body or "")[:4000]
+    m = _LABELED_LOC_RE.search(text)
+    if m:
+        return _clean_loc(m.group(1))
+    if _REMOTE_RE.search(text):
+        return "Remote"
+    m = _CITY_ST_RE.search(text)
+    if m:
+        return _clean_loc(m.group(1))
+    return ""
+
+
+def _email_passes_location(detected_loc: str, location_filter: str) -> bool:
+    """Apply the user's job-location filter.
+
+    - No filter -> everything passes.
+    - Unknown location -> always passes (process it too, per requirement).
+    - 'remote' filter -> only emails whose detected location is Remote.
+    - Otherwise -> substring match against the detected location.
+    """
+    f = (location_filter or "").strip().lower()
+    if not f:
+        return True
+    if not detected_loc:
+        return True
+    dl = detected_loc.lower()
+    if f in ("remote", "remote only", "wfh", "work from home", "telecommute"):
+        return "remote" in dl
+    return f in dl
+
+
 def _email_passes_subject(subject: str) -> bool:
     """Basic subject line checks: not a reply, contains a role-related keyword."""
     subject_lower = (subject or "").lower()
@@ -147,7 +200,7 @@ def _extract_body(msg: email.message.Message) -> str:
 
 def _fetch_and_parse(
     mail: imaplib.IMAP4_SSL, uid: bytes, folder: str, hours_window: int,
-    target_roles: List[str] | None = None,
+    target_roles: List[str] | None = None, location_filter: str = "",
 ) -> Dict[str, Any] | None:
     _, data = mail.fetch(uid, "(RFC822)")
     if not data or not data[0]:
@@ -174,6 +227,11 @@ def _fetch_and_parse(
         logger.debug("Skipped (role filter): %s", subject)
         return None
 
+    job_location = _extract_job_location(subject, body)
+    if not _email_passes_location(job_location, location_filter):
+        logger.debug("Skipped (location filter '%s' vs '%s'): %s", location_filter, job_location, subject)
+        return None
+
     return {
         "raw_email_body": body,
         "from_email": from_email,
@@ -183,6 +241,7 @@ def _fetch_and_parse(
         "message_id": message_id,
         "imap_uid": imap_uid,
         "folder": folder,
+        "job_location": job_location,
     }
 
 
@@ -201,7 +260,7 @@ def _folder_search(mail: imaplib.IMAP4_SSL, gmail_query: str, since_criteria: st
 
 def _search_folder(
     mail: imaplib.IMAP4_SSL, folder: str, gmail_query: str, since_criteria: str,
-    hours_window: int, target_roles: List[str] | None = None,
+    hours_window: int, target_roles: List[str] | None = None, location_filter: str = "",
 ) -> List[Dict[str, Any]]:
     try:
         status, detail = mail.select(folder, readonly=True)
@@ -217,7 +276,7 @@ def _search_folder(
     logger.info("Folder '%s': %d message(s) match query", folder, len(msg_ids))
     results = []
     for uid in msg_ids:
-        parsed = _fetch_and_parse(mail, uid, folder, hours_window, target_roles)
+        parsed = _fetch_and_parse(mail, uid, folder, hours_window, target_roles, location_filter)
         if parsed:
             results.append(parsed)
     logger.info("Folder '%s': %d passed all filters", folder, len(results))
@@ -259,6 +318,7 @@ def _scan_for_recruiter_emails(
     scan_hours: int | None = None,
     target_roles: List[str] | None = None,
     unread_only: bool = True,
+    location_filter: str = "",
 ) -> List[Dict[str, Any]]:
     """Connect to Gmail, scan folders, apply recruiter filters.
 
@@ -295,7 +355,7 @@ def _scan_for_recruiter_emails(
         for folder_name in folders_to_scan:
             logger.info("Scanning folder: %s  (gmail: %s)", folder_name, gmail_query)
             for parsed in _search_folder(mail, folder_name, gmail_query, since_criteria,
-                                         hours_window, target_roles):
+                                         hours_window, target_roles, location_filter):
                 mid = parsed.get("message_id", "")
                 if mid and mid not in seen_message_ids:
                     seen_message_ids.add(mid)
@@ -332,6 +392,7 @@ def scan_recruiter_emails(state: EmailPipelineState) -> Dict[str, Any]:
         scan_hours=state.get("scan_hours") or None,
         target_roles=state.get("target_roles") or None,
         unread_only=state.get("scan_unread_only", True),
+        location_filter=state.get("job_location_filter") or "",
     )
     new_emails = [e for e in emails if not _is_processed(e.get("message_id", ""))]
 

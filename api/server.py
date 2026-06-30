@@ -91,6 +91,7 @@ def _base_state() -> Dict[str, Any]:
         "scan_hours": 0,
         "scan_unread_only": True,
         "target_roles": [],
+        "job_location_filter": "",
         "selected_model": "",
         "recruiter_scan_done": False,
         "followup_scan_done": False,
@@ -139,12 +140,15 @@ def _apply_common_overrides(
     st: Dict[str, Any],
     model: Optional[str] = None,
     target_roles: Optional[List[str]] = None,
+    job_location: Optional[str] = None,
 ) -> None:
-    """Apply per-run model + target-role overrides onto a base state dict."""
+    """Apply per-run model + target-role + location overrides onto a base state dict."""
     if model:
         st["selected_model"] = model
     if target_roles:
         st["target_roles"] = [r.strip() for r in target_roles if isinstance(r, str) and r.strip()]
+    if job_location:
+        st["job_location_filter"] = job_location.strip()
 
 
 def _emails_state(
@@ -154,6 +158,7 @@ def _emails_state(
     threshold: Optional[float] = None,
     model: Optional[str] = None,
     target_roles: Optional[List[str]] = None,
+    job_location: Optional[str] = None,
 ) -> Dict[str, Any]:
     st = _base_state()
     st["run_recruiter_scan"] = True
@@ -165,7 +170,7 @@ def _emails_state(
     if hours:
         st["scan_hours"] = hours
     _apply_quality_overrides(st, max_iters, threshold)
-    _apply_common_overrides(st, model, target_roles)
+    _apply_common_overrides(st, model, target_roles, job_location)
     return st
 
 
@@ -179,6 +184,7 @@ def _auto_apply_state(
     threshold: Optional[float] = None,
     model: Optional[str] = None,
     target_roles: Optional[List[str]] = None,
+    job_location: Optional[str] = None,
 ) -> Dict[str, Any]:
     """State for Auto-Apply: scan the INBOX for NEW job positions only.
 
@@ -196,7 +202,7 @@ def _auto_apply_state(
     if hours:
         st["scan_hours"] = hours
     _apply_quality_overrides(st, max_iters, threshold)
-    _apply_common_overrides(st, model, target_roles)
+    _apply_common_overrides(st, model, target_roles, job_location)
     return st
 
 
@@ -248,7 +254,11 @@ def _kickoff_quality(payload: Dict[str, Any]) -> Dict[str, Any]:
     elif isinstance(raw_roles, str):
         roles = [r.strip() for r in raw_roles.split(",") if r.strip()]
 
-    return {"max_iters": mi_int, "threshold": th_f, "model": model, "target_roles": roles}
+    raw_loc = payload.get("job_location")
+    job_location = raw_loc.strip() if isinstance(raw_loc, str) else ""
+
+    return {"max_iters": mi_int, "threshold": th_f, "model": model,
+            "target_roles": roles, "job_location": job_location}
 
 
 # ---------------------------------------------------------------------------
@@ -423,7 +433,8 @@ async def ws_process_emails(websocket: WebSocket) -> None:
         websocket,
         _emails_state(folders=folders, hours=hours,
                       max_iters=quality["max_iters"], threshold=quality["threshold"],
-                      model=quality["model"], target_roles=quality["target_roles"]),
+                      model=quality["model"], target_roles=quality["target_roles"],
+                      job_location=quality["job_location"]),
     )
     try:
         await websocket.close()
@@ -460,7 +471,8 @@ async def ws_auto_apply(websocket: WebSocket) -> None:
         websocket,
         _auto_apply_state(hours=hours,
                           max_iters=quality["max_iters"], threshold=quality["threshold"],
-                          model=quality["model"], target_roles=quality["target_roles"]),
+                          model=quality["model"], target_roles=quality["target_roles"],
+                          job_location=quality["job_location"]),
     )
     try:
         await websocket.close()
@@ -661,6 +673,7 @@ def _build_email_item(message_id: str, entry: Dict[str, Any]) -> Dict[str, Any]:
         "subject": entry.get("subject", ""),
         "from_email": entry.get("from_email", ""),
         "processed_at": entry.get("processed_at", ""),
+        "job_location": entry.get("job_location", ""),
         "resume_filename": resume_name,
         "resume_download_url": f"/api/resume/{resume_name}" if resume_name else "",
         "pending_reply_id": entry.get("pending_reply_id", ""),

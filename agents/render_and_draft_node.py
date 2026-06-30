@@ -107,6 +107,7 @@ def _mark_processed(
     from_email: str,
     resume_file: str,
     pending_id: str,
+    job_location: str = "",
 ) -> None:
     try:
         state = json.loads(STATE_FILE_PATH.read_text(encoding="utf-8")) if STATE_FILE_PATH.exists() else {}
@@ -118,6 +119,7 @@ def _mark_processed(
         "from_email": from_email,
         "resume_file": resume_file,
         "pending_reply_id": pending_id,
+        "job_location": job_location,
         "status": "new",
     }
     STATE_FILE_PATH.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -181,7 +183,8 @@ def render_and_draft(state: EmailPipelineState) -> Dict[str, Any]:
                 "target_role_title": resume_json.get("target_role_title", ""),
             },
         )
-        _mark_processed(message_id, subject, from_email, str(resume_path), pending["id"])
+        _mark_processed(message_id, subject, from_email, str(resume_path), pending["id"],
+                        job_location=email_data.get("job_location", ""))
 
         # Mark original email \Seen + apply CLAUDE_PROCESSED so next scan skips it.
         mark_err = mark_email_processed(
