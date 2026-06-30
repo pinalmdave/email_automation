@@ -97,8 +97,33 @@ export interface ApplyPlan {
   applied_at: string;
 }
 
+export interface EmailAccount {
+  id: string;
+  email: string;
+  active: boolean;
+  added_at: string;
+  password_masked: string;
+  env_default?: boolean;
+}
+
+export interface ModelOption {
+  id: string;
+  label: string;
+}
+
+export interface PricingModel {
+  id: string;
+  label: string;
+  input: number;
+  output: number;
+  cache_write: number;
+  cache_read: number;
+  context: string;
+}
+
 export interface AppConfig {
   gmail_account: string;
+  accounts?: EmailAccount[];
   available_folders: string[];
   default_folders: string[];
   default_hours: number;
@@ -108,6 +133,8 @@ export interface AppConfig {
   default_acceptance_threshold: number;
   max_iteration_options: number[];
   threshold_options: number[];
+  model_options?: ModelOption[];
+  default_model?: string;
 }
 
 export interface ProgressEvent {

@@ -1,44 +1,42 @@
 export type TabKey =
-  | "email_scan"
-  | "processed"
-  | "archived"
+  | "dashboard"
+  | "tracker"
   | "conversations"
   | "apply"
   | "apply_url"
-  | "paste_jd";
+  | "paste_jd"
+  | "archived";
 
 interface Props {
   active: TabKey;
   onChange: (tab: TabKey) => void;
   newEmailCount: number;
-  processedCount: number;
   archivedCount: number;
   pendingCount: number;
   applyReadyCount: number;
 }
 
 const TABS: { key: TabKey; label: string; icon: string }[] = [
-  { key: "email_scan",     label: "Email Scan",       icon: "✉" },
-  { key: "processed",      label: "Processed Emails", icon: "✔" },
-  { key: "archived",       label: "Archived",         icon: "🗄" },
-  { key: "conversations",  label: "Conversations",    icon: "✎" },
-  { key: "apply",          label: "Apply History",    icon: "⇢" },
-  { key: "apply_url",      label: "Apply from URL",   icon: "🔗" },
-  { key: "paste_jd",       label: "Paste JD",         icon: "💬" },
+  { key: "dashboard",     label: "Dashboard",           icon: "▤" },
+  { key: "tracker",       label: "Application Tracker", icon: "✉" },
+  { key: "conversations", label: "Conversations",       icon: "✎" },
+  { key: "apply",         label: "Apply History",       icon: "⇢" },
+  { key: "apply_url",     label: "Apply from URL",      icon: "🔗" },
+  { key: "paste_jd",      label: "Paste JD",            icon: "💬" },
+  { key: "archived",      label: "Archived",            icon: "🗄" },
 ];
 
-export function Sidebar({ active, onChange, newEmailCount, processedCount, archivedCount, pendingCount, applyReadyCount }: Props) {
+export function Sidebar({ active, onChange, newEmailCount, archivedCount, pendingCount, applyReadyCount }: Props) {
   return (
     <nav className="sidebar">
       <div className="sidebar__brand">Smart Email</div>
       <ul className="sidebar__list">
         {TABS.map((t) => {
           const badge =
-            t.key === "email_scan"    && newEmailCount > 0    ? newEmailCount :
-            t.key === "processed"     && processedCount > 0   ? processedCount :
-            t.key === "archived"      && archivedCount > 0    ? archivedCount :
-            t.key === "conversations" && pendingCount > 0     ? pendingCount :
-            t.key === "apply"         && applyReadyCount > 0  ? applyReadyCount :
+            t.key === "tracker"       && newEmailCount > 0   ? newEmailCount :
+            t.key === "archived"      && archivedCount > 0   ? archivedCount :
+            t.key === "conversations" && pendingCount > 0    ? pendingCount :
+            t.key === "apply"         && applyReadyCount > 0 ? applyReadyCount :
             undefined;
           const isActive = active === t.key;
           return (

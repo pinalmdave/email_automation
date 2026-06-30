@@ -17,6 +17,33 @@ IMAP_PASSWORD = os.getenv("IMAP_PASSWORD", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-4-8")
 
+# Selectable Claude models (UI dropdown). Only these IDs are accepted per-run;
+# anything else falls back to CLAUDE_MODEL to avoid 404s on bad model strings.
+CLAUDE_MODELS = [
+    {"id": "claude-opus-4-8",   "label": "Claude Opus 4.8"},
+    {"id": "claude-opus-4-7",   "label": "Claude Opus 4.7"},
+    {"id": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6"},
+    {"id": "claude-haiku-4-5",  "label": "Claude Haiku 4.5"},
+]
+CLAUDE_MODEL_IDS = {m["id"] for m in CLAUDE_MODELS}
+
+
+def resolve_model(model_id: str | None) -> str:
+    """Return a valid Claude model id, falling back to the configured default."""
+    if model_id and model_id in CLAUDE_MODEL_IDS:
+        return model_id
+    return CLAUDE_MODEL
+
+
+# Current Claude pricing (USD per 1M tokens). Served via /api/pricing so the
+# Compare Pricing modal reflects one centrally-maintained source.
+CLAUDE_PRICING = [
+    {"id": "claude-opus-4-8",   "label": "Claude Opus 4.8",   "input": 5.00, "output": 25.00, "cache_write": 6.25, "cache_read": 0.50, "context": "1M"},
+    {"id": "claude-opus-4-7",   "label": "Claude Opus 4.7",   "input": 5.00, "output": 25.00, "cache_write": 6.25, "cache_read": 0.50, "context": "1M"},
+    {"id": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6", "input": 3.00, "output": 15.00, "cache_write": 3.75, "cache_read": 0.30, "context": "1M"},
+    {"id": "claude-haiku-4-5",  "label": "Claude Haiku 4.5",  "input": 1.00, "output":  5.00, "cache_write": 1.25, "cache_read": 0.10, "context": "200K"},
+]
+
 # === Email Filtering ===
 EXCLUDED_DOMAINS = tuple(
     d.strip().lower()
@@ -68,6 +95,7 @@ FOLLOWUP_STATE_PATH = BASE_DIR / "followup_state.json"
 USAGE_TOTALS_PATH = BASE_DIR / "usage_totals.json"
 PENDING_REPLIES_PATH = BASE_DIR / "pending_replies.json"
 APPLY_PLANS_PATH = BASE_DIR / "apply_plans.json"
+EMAIL_ACCOUNTS_PATH = BASE_DIR / "email_accounts.json"
 
 # === SMTP (used when user approves a pending reply) ===
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")

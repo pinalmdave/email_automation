@@ -11,7 +11,8 @@ import imaplib
 import logging
 from typing import Optional
 
-from config import IMAP_HOST, IMAP_PASSWORD, IMAP_PORT, IMAP_USER
+from config import IMAP_HOST, IMAP_PORT
+from email_accounts import get_active_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -29,14 +30,15 @@ def mark_email_processed(folder: str, imap_uid: str, label: str = CLAUDE_PROCESS
     """
     if not imap_uid or not folder:
         return "missing folder or imap_uid"
-    if not IMAP_USER or not IMAP_PASSWORD:
+    imap_user, imap_password = get_active_credentials()
+    if not imap_user or not imap_password:
         return "IMAP credentials not configured"
 
     uid_bytes = imap_uid.encode() if isinstance(imap_uid, str) else imap_uid
 
     try:
         mail = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT)
-        mail.login(IMAP_USER, IMAP_PASSWORD)
+        mail.login(imap_user, imap_password)
     except Exception as exc:  # noqa: BLE001
         logger.warning("IMAP login failed while marking processed: %s", exc)
         return f"login failed: {exc}"

@@ -12,9 +12,10 @@ OUT = os.path.join(ROOT, "deploy.zip")
 
 DIRS = ["agents", "api", "graph", "prompts", "templates", "knowledge"]
 FILES = [
-    "apply_plans.py", "blob_storage.py", "config.py", "gmail_mark.py",
-    "jd_fetch.py", "knowledge_base.py", "main.py", "pending_replies.py",
-    "smtp_send.py", "usage_tracker.py", "requirements.txt", "startup.sh",
+    "apply_plans.py", "blob_storage.py", "config.py", "email_accounts.py",
+    "gmail_mark.py", "jd_fetch.py", "knowledge_base.py", "main.py",
+    "pending_replies.py", "smtp_send.py", "usage_tracker.py",
+    "requirements.txt", "startup.sh",
 ]
 
 

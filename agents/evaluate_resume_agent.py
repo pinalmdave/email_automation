@@ -20,6 +20,7 @@ from config import (
     CLAUDE_MODEL,
     PROMPTS_DIR,
     RESUME_ACCEPTANCE_THRESHOLD,
+    resolve_model,
 )
 from graph.state import EmailPipelineState
 from knowledge_base import system_prompt_with_knowledge
@@ -53,6 +54,7 @@ def _run_evaluator(
     email_data: Dict[str, Any],
     resume_json: Dict[str, Any],
     iteration: int,
+    model: str = CLAUDE_MODEL,
 ) -> Dict[str, Any]:
     """Call Claude with the evaluator prompt. Returns parsed verdict dict."""
     system_prompt = system_prompt_with_knowledge(
@@ -64,7 +66,7 @@ def _run_evaluator(
         "iteration": iteration,
     }
 
-    llm = ChatAnthropic(model=CLAUDE_MODEL, max_tokens=1024)
+    llm = ChatAnthropic(model=model, max_tokens=1024)
     response = llm.invoke([
         SystemMessage(content=[{
             "type": "text",
@@ -99,9 +101,10 @@ def evaluate_resume(state: EmailPipelineState) -> Dict[str, Any]:
 
     # Per-run override or fall back to config default.
     threshold = float(state.get("resume_acceptance_threshold") or 0.0) or RESUME_ACCEPTANCE_THRESHOLD
+    model = resolve_model(state.get("selected_model"))
 
     try:
-        verdict = _run_evaluator(email_data, resume_json, iteration)
+        verdict = _run_evaluator(email_data, resume_json, iteration, model=model)
         score = float(verdict.get("score", 0.0))
         feedback = str(verdict.get("feedback", "")).strip()
         recommend_decline = bool(verdict.get("recommend_decline", False))

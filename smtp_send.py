@@ -16,15 +16,17 @@ from email.mime.text import MIMEText
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from config import IMAP_PASSWORD, IMAP_USER, SMTP_HOST, SMTP_PORT
+from config import SMTP_HOST, SMTP_PORT
+from email_accounts import get_active_credentials
 
 logger = logging.getLogger(__name__)
 
 
 def send_pending_reply(pending: Dict[str, Any]) -> Optional[str]:
     """Send a pending reply via SMTP. Returns None on success, error msg on failure."""
-    if not IMAP_USER or not IMAP_PASSWORD:
-        return "IMAP_USER and IMAP_PASSWORD must be set for SMTP send"
+    imap_user, imap_password = get_active_credentials()
+    if not imap_user or not imap_password:
+        return "No connected email account for SMTP send"
 
     reply = pending.get("reply", {})
     to_addr = reply.get("to", "").strip()
@@ -34,7 +36,7 @@ def send_pending_reply(pending: Dict[str, Any]) -> Optional[str]:
         return "Pending reply has no recipient"
 
     msg = MIMEMultipart()
-    msg["From"] = IMAP_USER
+    msg["From"] = imap_user
     msg["To"] = to_addr
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain", "utf-8"))
@@ -61,8 +63,8 @@ def send_pending_reply(pending: Dict[str, Any]) -> Optional[str]:
             server.ehlo()
             server.starttls()
             server.ehlo()
-            server.login(IMAP_USER, IMAP_PASSWORD)
-            server.sendmail(IMAP_USER, [to_addr], msg.as_string())
+            server.login(imap_user, imap_password)
+            server.sendmail(imap_user, [to_addr], msg.as_string())
         logger.info("SMTP send OK — to=%s subject=%s pending_id=%s",
                     to_addr, subject, pending.get("id"))
         return None

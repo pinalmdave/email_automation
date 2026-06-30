@@ -16,13 +16,13 @@ from typing import Any, Dict, List
 from config import (
     EXCLUDED_DOMAINS,
     IMAP_HOST,
-    IMAP_PASSWORD,
     IMAP_PORT,
-    IMAP_USER,
     MAX_EMAIL_AGE_HOURS,
     SCAN_FOLDERS,
     STATE_FILE_PATH,
 )
+from email_accounts import get_active_credentials
+from gmail_mark import CLAUDE_PROCESSED_LABEL
 from graph.state import EmailPipelineState
 
 logger = logging.getLogger(__name__)
@@ -90,6 +90,17 @@ def _is_ai_cloud_position(subject: str, body: str = "") -> bool:
     return any(kw in text for kw in AI_CLOUD_KEYWORDS)
 
 
+def _email_passes_roles(subject: str, body: str, target_roles: List[str]) -> bool:
+    """When the user supplies target roles, an email qualifies only if its
+    subject matches one of them (e.g. 'AI Architect', 'Cloud Architect').
+    With no target roles, fall back to the built-in AI/Cloud filter."""
+    roles = [r.strip().lower() for r in (target_roles or []) if r and r.strip()]
+    if not roles:
+        return _is_ai_cloud_position(subject, body)
+    text = " " + (subject or "").lower() + " "
+    return any(role in text for role in roles)
+
+
 def _email_passes_subject(subject: str) -> bool:
     """Basic subject line checks: not a reply, contains a role-related keyword."""
     subject_lower = (subject or "").lower()
@@ -136,6 +147,7 @@ def _extract_body(msg: email.message.Message) -> str:
 
 def _fetch_and_parse(
     mail: imaplib.IMAP4_SSL, uid: bytes, folder: str, hours_window: int,
+    target_roles: List[str] | None = None,
 ) -> Dict[str, Any] | None:
     _, data = mail.fetch(uid, "(RFC822)")
     if not data or not data[0]:
@@ -150,15 +162,16 @@ def _fetch_and_parse(
 
     if not _email_passes_domain(from_email):
         return None
-    if not _email_passes_subject(subject):
+    # Skip replies regardless of role filter.
+    if "re:" in (subject or "").lower():
         return None
     if not _email_passes_date(date_str, hours_window):
         return None
 
     body = _extract_body(msg)
 
-    if not _is_ai_cloud_position(subject, body):
-        logger.debug("Skipped (not AI/Cloud): %s", subject)
+    if not _email_passes_roles(subject, body, target_roles or []):
+        logger.debug("Skipped (role filter): %s", subject)
         return None
 
     return {
@@ -173,8 +186,22 @@ def _fetch_and_parse(
     }
 
 
+def _folder_search(mail: imaplib.IMAP4_SSL, gmail_query: str, since_criteria: str):
+    """Search a selected folder, preferring Gmail's X-GM-RAW (so we can exclude
+    the CLAUDE_PROCESSED label server-side). Falls back to a plain IMAP search
+    if the Gmail extension isn't available."""
+    try:
+        typ, nums = mail.search(None, "X-GM-RAW", f'"{gmail_query}"')
+        if typ == "OK":
+            return nums
+    except Exception as e:  # noqa: BLE001
+        logger.debug("X-GM-RAW search unavailable (%s) — falling back to IMAP search", e)
+    return mail.search(None, since_criteria)[1]
+
+
 def _search_folder(
-    mail: imaplib.IMAP4_SSL, folder: str, since_criteria: str, hours_window: int,
+    mail: imaplib.IMAP4_SSL, folder: str, gmail_query: str, since_criteria: str,
+    hours_window: int, target_roles: List[str] | None = None,
 ) -> List[Dict[str, Any]]:
     try:
         status, detail = mail.select(folder, readonly=True)
@@ -185,12 +212,12 @@ def _search_folder(
         logger.warning("Folder '%s': select returned %s (%s) — skipping", folder, status, detail)
         return []
 
-    _, message_numbers = mail.search(None, since_criteria)
-    msg_ids = message_numbers[0].split()
-    logger.info("Folder '%s': %d message(s) match %s", folder, len(msg_ids), since_criteria)
+    message_numbers = _folder_search(mail, gmail_query, since_criteria)
+    msg_ids = message_numbers[0].split() if message_numbers and message_numbers[0] else []
+    logger.info("Folder '%s': %d message(s) match query", folder, len(msg_ids))
     results = []
     for uid in msg_ids:
-        parsed = _fetch_and_parse(mail, uid, folder, hours_window)
+        parsed = _fetch_and_parse(mail, uid, folder, hours_window, target_roles)
         if parsed:
             results.append(parsed)
     logger.info("Folder '%s': %d passed all filters", folder, len(results))
@@ -199,11 +226,12 @@ def _search_folder(
 
 def list_imap_folders() -> List[str]:
     """Return all folder/label names visible via IMAP (for the Folders dropdown)."""
-    if not IMAP_USER or not IMAP_PASSWORD:
+    imap_user, imap_password = get_active_credentials()
+    if not imap_user or not imap_password:
         return list(SCAN_FOLDERS)
     try:
         mail = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT)
-        mail.login(IMAP_USER, IMAP_PASSWORD)
+        mail.login(imap_user, imap_password)
         _, folder_list = mail.list()
         mail.logout()
         folders = []
@@ -229,38 +257,45 @@ def list_imap_folders() -> List[str]:
 def _scan_for_recruiter_emails(
     scan_folders: List[str] | None = None,
     scan_hours: int | None = None,
+    target_roles: List[str] | None = None,
+    unread_only: bool = True,
 ) -> List[Dict[str, Any]]:
     """Connect to Gmail, scan folders, apply recruiter filters.
 
-    Folders and lookback window can be overridden per-request (UI selections);
-    otherwise the config defaults are used.
+    Dedup is primarily server-side: the Gmail query excludes anything already
+    tagged CLAUDE_PROCESSED (applied by the app after it queues a reply), so
+    previously-processed emails are never re-fetched regardless of read state.
     """
-    if not IMAP_USER or not IMAP_PASSWORD:
-        raise RuntimeError("IMAP_USER and IMAP_PASSWORD must be set in .env")
+    imap_user, imap_password = get_active_credentials()
+    if not imap_user or not imap_password:
+        raise RuntimeError("No connected email account (set IMAP_USER/IMAP_PASSWORD or add an account)")
 
     folders_to_scan = list(scan_folders) if scan_folders else list(SCAN_FOLDERS)
     hours_window = scan_hours if (scan_hours and scan_hours > 0) else MAX_EMAIL_AGE_HOURS
-    # Use per-run flag: when user explicitly picks folders, relax UNSEEN
-    # requirement so already-read emails are still picked up.
-    user_selected = bool(scan_folders)
 
     mail = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT)
-    mail.login(IMAP_USER, IMAP_PASSWORD)
+    mail.login(imap_user, imap_password)
 
+    # Gmail search (X-GM-RAW): lookback window + exclude already-processed.
+    # newer_than uses day granularity; the precise hours filter is applied
+    # per-email in _fetch_and_parse.
+    days = max(1, (hours_window + 23) // 24)
+    gmail_query = f"newer_than:{days}d -label:{CLAUDE_PROCESSED_LABEL}"
+    if unread_only:
+        gmail_query += " is:unread"
+
+    # Plain-IMAP fallback (no Gmail extensions): SINCE + optional UNSEEN.
     since = (datetime.now(timezone.utc) - timedelta(hours=hours_window)).strftime("%d-%b-%Y")
-    # Default: UNSEEN only — once the app marks an email processed it marks
-    # it \Seen so subsequent scans skip it automatically.
-    # When the user explicitly selects folders they may have already-read
-    # emails they want processed, so drop the UNSEEN requirement.
-    since_criteria = f"(SINCE {since})" if user_selected else f"(UNSEEN SINCE {since})"
+    since_criteria = f"(UNSEEN SINCE {since})" if unread_only else f"(SINCE {since})"
 
     all_emails: List[Dict[str, Any]] = []
     seen_message_ids = set()
 
     try:
         for folder_name in folders_to_scan:
-            logger.info("Scanning folder: %s  (criteria: %s)", folder_name, since_criteria)
-            for parsed in _search_folder(mail, folder_name, since_criteria, hours_window):
+            logger.info("Scanning folder: %s  (gmail: %s)", folder_name, gmail_query)
+            for parsed in _search_folder(mail, folder_name, gmail_query, since_criteria,
+                                         hours_window, target_roles):
                 mid = parsed.get("message_id", "")
                 if mid and mid not in seen_message_ids:
                     seen_message_ids.add(mid)
@@ -295,6 +330,8 @@ def scan_recruiter_emails(state: EmailPipelineState) -> Dict[str, Any]:
     emails = _scan_for_recruiter_emails(
         scan_folders=state.get("scan_folders") or None,
         scan_hours=state.get("scan_hours") or None,
+        target_roles=state.get("target_roles") or None,
+        unread_only=state.get("scan_unread_only", True),
     )
     new_emails = [e for e in emails if not _is_processed(e.get("message_id", ""))]
 

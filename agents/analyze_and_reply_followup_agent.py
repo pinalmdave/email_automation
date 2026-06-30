@@ -13,7 +13,7 @@ from typing import Any, Dict
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from config import CLAUDE_MODEL, PROMPTS_DIR
+from config import CLAUDE_MODEL, PROMPTS_DIR, resolve_model
 from gmail_mark import mark_email_processed
 from graph.state import EmailPipelineState
 from knowledge_base import system_prompt_with_knowledge
@@ -28,13 +28,13 @@ FOLLOWUP_PROMPT_PATH = PROMPTS_DIR / "followup_prompt.txt"
 # Claude-powered intent analysis and reply generation
 # ---------------------------------------------------------------------------
 
-def _generate_followup_reply(email_data: Dict[str, Any]) -> Dict[str, Any]:
+def _generate_followup_reply(email_data: Dict[str, Any], model: str = CLAUDE_MODEL) -> Dict[str, Any]:
     """Use Claude to analyze recruiter follow-up and generate a smart reply."""
     system_prompt = system_prompt_with_knowledge(
         FOLLOWUP_PROMPT_PATH.read_text(encoding="utf-8")
     )
 
-    llm = ChatAnthropic(model=CLAUDE_MODEL, max_tokens=2048)
+    llm = ChatAnthropic(model=model, max_tokens=2048)
     # Static system prompt + knowledge — cache via ephemeral cache_control.
     response = llm.invoke([
         SystemMessage(content=[{
@@ -115,9 +115,10 @@ def analyze_and_reply_followup(state: EmailPipelineState) -> Dict[str, Any]:
     processed = state.get("followup_processed", 0)
     message_id = followup.get("message_id", "")
     subject = followup.get("subject", "?")
+    model = resolve_model(state.get("selected_model"))
 
     try:
-        reply_result = _generate_followup_reply(followup)
+        reply_result = _generate_followup_reply(followup, model=model)
         reply = _build_followup_reply(followup, reply_result)
         pending = create_pending_reply(
             kind="followup",

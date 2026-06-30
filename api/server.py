@@ -31,6 +31,10 @@ import apply_plans
 import pending_replies
 from blob_storage import bootstrap_state_from_blob, generate_resume_sas_url
 from config import (
+    CLAUDE_MODEL,
+    CLAUDE_MODELS,
+    CLAUDE_MODEL_IDS,
+    CLAUDE_PRICING,
     GRAPH_RECURSION_LIMIT,
     IMAP_USER,
     MAX_EMAIL_AGE_HOURS,
@@ -40,6 +44,7 @@ from config import (
     SCAN_FOLDERS,
     STATE_FILE_PATH,
 )
+import email_accounts
 from graph import compile_graph
 from smtp_send import send_pending_reply
 from usage_tracker import get_snapshot, reset_session
@@ -84,6 +89,9 @@ def _base_state() -> Dict[str, Any]:
         "run_followup_scan": False,
         "scan_folders": [],
         "scan_hours": 0,
+        "scan_unread_only": True,
+        "target_roles": [],
+        "selected_model": "",
         "recruiter_scan_done": False,
         "followup_scan_done": False,
         "scanned_emails": [],
@@ -127,20 +135,37 @@ def _apply_quality_overrides(
         st["resume_acceptance_threshold"] = float(threshold)
 
 
+def _apply_common_overrides(
+    st: Dict[str, Any],
+    model: Optional[str] = None,
+    target_roles: Optional[List[str]] = None,
+) -> None:
+    """Apply per-run model + target-role overrides onto a base state dict."""
+    if model:
+        st["selected_model"] = model
+    if target_roles:
+        st["target_roles"] = [r.strip() for r in target_roles if isinstance(r, str) and r.strip()]
+
+
 def _emails_state(
     folders: Optional[List[str]] = None,
     hours: Optional[int] = None,
     max_iters: Optional[int] = None,
     threshold: Optional[float] = None,
+    model: Optional[str] = None,
+    target_roles: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     st = _base_state()
     st["run_recruiter_scan"] = True
     st["run_followup_scan"] = True
     if folders:
         st["scan_folders"] = folders
+        # Manual folder selection historically includes already-read emails.
+        st["scan_unread_only"] = False
     if hours:
         st["scan_hours"] = hours
     _apply_quality_overrides(st, max_iters, threshold)
+    _apply_common_overrides(st, model, target_roles)
     return st
 
 
@@ -152,44 +177,54 @@ def _auto_apply_state(
     hours: Optional[int] = None,
     max_iters: Optional[int] = None,
     threshold: Optional[float] = None,
+    model: Optional[str] = None,
+    target_roles: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """State for Auto-Apply: scan the INBOX for NEW job positions only.
 
     Runs the recruiter scan (and the resume generate/evaluate/draft loop) but
     skips the follow-up-reply scan, so it focuses purely on applying to fresh
-    positions. Generated drafts land in New Emails / Conversations for 1-click
-    review and send — nothing is emailed automatically.
+    positions. Only unread, not-yet-processed emails are considered. Generated
+    drafts land in the Application Tracker for 1-click review and send —
+    nothing is emailed automatically.
     """
     st = _base_state()
     st["run_recruiter_scan"] = True
     st["run_followup_scan"] = False
     st["scan_folders"] = ["INBOX"]
+    st["scan_unread_only"] = True
     if hours:
         st["scan_hours"] = hours
     _apply_quality_overrides(st, max_iters, threshold)
+    _apply_common_overrides(st, model, target_roles)
     return st
 
 
 def _jd_state(jd_text: str,
               max_iters: Optional[int] = None,
-              threshold: Optional[float] = None) -> Dict[str, Any]:
+              threshold: Optional[float] = None,
+              model: Optional[str] = None) -> Dict[str, Any]:
     st = _base_state()
     st["job_description_text"] = jd_text
     _apply_quality_overrides(st, max_iters, threshold)
+    _apply_common_overrides(st, model)
     return st
 
 
 def _apply_url_state(url: str,
                      max_iters: Optional[int] = None,
-                     threshold: Optional[float] = None) -> Dict[str, Any]:
+                     threshold: Optional[float] = None,
+                     model: Optional[str] = None) -> Dict[str, Any]:
     st = _base_state()
     st["job_url"] = url
     _apply_quality_overrides(st, max_iters, threshold)
+    _apply_common_overrides(st, model)
     return st
 
 
 def _kickoff_quality(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Extract max_iters + threshold from a kickoff payload, with clamping."""
+    """Extract max_iters, threshold, model, and target_roles from a kickoff
+    payload (validated/clamped)."""
     mi = payload.get("max_iterations")
     th = payload.get("acceptance_threshold")
     try:
@@ -200,7 +235,20 @@ def _kickoff_quality(payload: Dict[str, Any]) -> Dict[str, Any]:
         th_f: Optional[float] = max(0.5, min(0.99, float(th))) if th is not None else None
     except (TypeError, ValueError):
         th_f = None
-    return {"max_iters": mi_int, "threshold": th_f}
+
+    # Per-run model — only honor a known Claude id; else None (→ config default).
+    raw_model = payload.get("model")
+    model = raw_model if (isinstance(raw_model, str) and raw_model in CLAUDE_MODEL_IDS) else None
+
+    # Target roles — accept a list of strings or a comma-separated string.
+    raw_roles = payload.get("target_roles")
+    roles: List[str] = []
+    if isinstance(raw_roles, list):
+        roles = [r.strip() for r in raw_roles if isinstance(r, str) and r.strip()]
+    elif isinstance(raw_roles, str):
+        roles = [r.strip() for r in raw_roles.split(",") if r.strip()]
+
+    return {"max_iters": mi_int, "threshold": th_f, "model": model, "target_roles": roles}
 
 
 # ---------------------------------------------------------------------------
@@ -374,7 +422,8 @@ async def ws_process_emails(websocket: WebSocket) -> None:
     await _stream_pipeline(
         websocket,
         _emails_state(folders=folders, hours=hours,
-                      max_iters=quality["max_iters"], threshold=quality["threshold"]),
+                      max_iters=quality["max_iters"], threshold=quality["threshold"],
+                      model=quality["model"], target_roles=quality["target_roles"]),
     )
     try:
         await websocket.close()
@@ -410,7 +459,8 @@ async def ws_auto_apply(websocket: WebSocket) -> None:
     await _stream_pipeline(
         websocket,
         _auto_apply_state(hours=hours,
-                          max_iters=quality["max_iters"], threshold=quality["threshold"]),
+                          max_iters=quality["max_iters"], threshold=quality["threshold"],
+                          model=quality["model"], target_roles=quality["target_roles"]),
     )
     try:
         await websocket.close()
@@ -441,7 +491,7 @@ async def ws_process_jd(websocket: WebSocket) -> None:
     q = _kickoff_quality(data if isinstance(data, dict) else {})
     await _stream_pipeline(
         websocket,
-        _jd_state(jd_text, max_iters=q["max_iters"], threshold=q["threshold"]),
+        _jd_state(jd_text, max_iters=q["max_iters"], threshold=q["threshold"], model=q["model"]),
     )
     try:
         await websocket.close()
@@ -473,7 +523,7 @@ async def ws_apply_from_url(websocket: WebSocket) -> None:
     q = _kickoff_quality(data if isinstance(data, dict) else {})
     await _stream_pipeline(
         websocket,
-        _apply_url_state(url, max_iters=q["max_iters"], threshold=q["threshold"]),
+        _apply_url_state(url, max_iters=q["max_iters"], threshold=q["threshold"], model=q["model"]),
     )
     try:
         await websocket.close()
@@ -501,8 +551,10 @@ def config_info() -> Dict[str, Any]:
     """UI-facing config defaults — current Gmail account, folders, lookback window."""
     from agents.scan_recruiter_emails_node import list_imap_folders
     live_folders = list_imap_folders()
+    active_email, _ = email_accounts.get_active_credentials()
     return {
-        "gmail_account": IMAP_USER,
+        "gmail_account": active_email or IMAP_USER,
+        "accounts": email_accounts.list_accounts(),
         "available_folders": live_folders,
         "default_folders": list(SCAN_FOLDERS),
         "default_hours": MAX_EMAIL_AGE_HOURS,
@@ -512,7 +564,51 @@ def config_info() -> Dict[str, Any]:
         "default_acceptance_threshold": RESUME_ACCEPTANCE_THRESHOLD,
         "max_iteration_options": [1, 2, 3, 4, 5],
         "threshold_options": [0.70, 0.75, 0.80, 0.85, 0.90],
+        "model_options": CLAUDE_MODELS,
+        "default_model": CLAUDE_MODEL,
     }
+
+
+@app.get("/api/pricing")
+def pricing() -> Dict[str, Any]:
+    """Current Claude model pricing (USD per 1M tokens) for the Compare Pricing UI."""
+    return {"currency": "USD", "unit": "per 1M tokens", "models": CLAUDE_PRICING}
+
+
+# ---------------------------------------------------------------------------
+# Connected email accounts
+# ---------------------------------------------------------------------------
+
+class AddAccountBody(BaseModel):
+    email: str
+    app_password: str
+
+
+@app.get("/api/accounts")
+def accounts_list() -> Dict[str, Any]:
+    return {"items": email_accounts.list_accounts()}
+
+
+@app.post("/api/accounts")
+def accounts_add(body: AddAccountBody) -> Dict[str, Any]:
+    try:
+        return email_accounts.add_account(body.email, body.app_password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/accounts/{account_id}/activate")
+def accounts_activate(account_id: str) -> Dict[str, Any]:
+    if not email_accounts.set_active(account_id):
+        raise HTTPException(status_code=404, detail="Account not found")
+    return {"items": email_accounts.list_accounts()}
+
+
+@app.delete("/api/accounts/{account_id}")
+def accounts_delete(account_id: str) -> Dict[str, Any]:
+    if not email_accounts.delete_account(account_id):
+        raise HTTPException(status_code=404, detail="Account not found")
+    return {"items": email_accounts.list_accounts()}
 
 
 @app.get("/api/imap-folders")
@@ -611,21 +707,16 @@ def update_processed_email_status(message_id: str, body: UpdateEmailStatusBody) 
         return _build_email_item(message_id, raw[message_id])
 
 
-@app.post("/api/processed-emails/{message_id}/send")
-def send_processed_email_endpoint(message_id: str) -> Dict[str, Any]:
-    """Send the draft email with attached resume via SMTP."""
+def _send_message_email(message_id: str) -> Dict[str, Any]:
+    """Core SMTP send for a processed email's queued draft. Raises HTTPException
+    on failure; returns the updated item on success."""
     with _state_lock:
         raw = _read_state_raw()
         if message_id not in raw:
             raise HTTPException(status_code=404, detail="Email not found")
         entry = raw[message_id]
 
-    normalized = _normalize_email_status(entry.get("status", ""))
-    if normalized != "approved":
-        raise HTTPException(status_code=409, detail="Email must be in 'approved' status to send")
-
     pending_reply_id = entry.get("pending_reply_id", "")
-
     # Look up by stored ID first; fall back to searching by original message_id.
     item = pending_replies.get(pending_reply_id) if pending_reply_id else None
     if not item:
@@ -639,14 +730,15 @@ def send_processed_email_endpoint(message_id: str) -> Dict[str, Any]:
     if not item:
         raise HTTPException(
             status_code=400,
-            detail="No draft found for this email. Use the Conversations tab to create one.",
+            detail="No draft found for this email.",
         )
 
     err = send_pending_reply(item)
     if err:
         raise HTTPException(status_code=502, detail=f"SMTP send failed: {err}")
 
-    pending_replies.mark_status(pending_reply_id, "sent")
+    if pending_reply_id:
+        pending_replies.mark_status(pending_reply_id, "sent")
 
     with _state_lock:
         raw = _read_state_raw()
@@ -654,6 +746,65 @@ def send_processed_email_endpoint(message_id: str) -> Dict[str, Any]:
             raw[message_id]["status"] = "sent"
             _write_state_raw(raw)
         return _build_email_item(message_id, raw.get(message_id, entry))
+
+
+@app.post("/api/processed-emails/{message_id}/send")
+def send_processed_email_endpoint(message_id: str) -> Dict[str, Any]:
+    """Send the draft email with attached resume via SMTP (must be approved)."""
+    with _state_lock:
+        raw = _read_state_raw()
+        if message_id not in raw:
+            raise HTTPException(status_code=404, detail="Email not found")
+        entry = raw[message_id]
+    if _normalize_email_status(entry.get("status", "")) != "approved":
+        raise HTTPException(status_code=409, detail="Email must be in 'approved' status to send")
+    return _send_message_email(message_id)
+
+
+@app.post("/api/processed-emails/{message_id}/approve-send")
+def approve_and_send_processed_email(message_id: str) -> Dict[str, Any]:
+    """Approve and immediately send a processed email's draft in one step."""
+    with _state_lock:
+        raw = _read_state_raw()
+        if message_id not in raw:
+            raise HTTPException(status_code=404, detail="Email not found")
+        if _normalize_email_status(raw[message_id].get("status", "")) not in ("new", "approved"):
+            raise HTTPException(status_code=409, detail="Email must be New or Approved to send")
+        raw[message_id]["status"] = "approved"
+        _write_state_raw(raw)
+    return _send_message_email(message_id)
+
+
+class BulkIdsBody(BaseModel):
+    message_ids: List[str]
+
+
+@app.post("/api/processed-emails/bulk-approve-send")
+def bulk_approve_and_send(body: BulkIdsBody) -> Dict[str, Any]:
+    """Approve + send several drafts. Returns per-id results (best-effort)."""
+    if not body.message_ids:
+        raise HTTPException(status_code=400, detail="message_ids must not be empty")
+    sent: List[str] = []
+    failed: List[Dict[str, str]] = []
+    for mid in body.message_ids:
+        try:
+            with _state_lock:
+                raw = _read_state_raw()
+                if mid not in raw:
+                    failed.append({"message_id": mid, "error": "not found"})
+                    continue
+                if _normalize_email_status(raw[mid].get("status", "")) not in ("new", "approved"):
+                    failed.append({"message_id": mid, "error": "not sendable"})
+                    continue
+                raw[mid]["status"] = "approved"
+                _write_state_raw(raw)
+            _send_message_email(mid)
+            sent.append(mid)
+        except HTTPException as exc:
+            failed.append({"message_id": mid, "error": str(exc.detail)})
+        except Exception as exc:  # noqa: BLE001
+            failed.append({"message_id": mid, "error": str(exc)})
+    return {"sent": sent, "failed": failed, "sent_count": len(sent)}
 
 
 class BulkStatusBody(BaseModel):

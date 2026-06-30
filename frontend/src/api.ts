@@ -1,4 +1,4 @@
-import type { ApplyPlan, AppConfig, Conversation, ProcessedEmail, UsageSnapshot } from "./types";
+import type { ApplyPlan, AppConfig, Conversation, EmailAccount, PricingModel, ProcessedEmail, UsageSnapshot } from "./types";
 
 const BASE = (import.meta as any).env?.VITE_API_BASE_URL ?? "";
 
@@ -100,6 +100,52 @@ export async function bulkUnarchiveEmails(messageIds: string[]): Promise<{ count
     method: "POST",
     body: JSON.stringify({ message_ids: messageIds, status: "new" }),
   });
+}
+
+export async function approveSendEmail(messageId: string): Promise<void> {
+  await jsonFetch(`/api/processed-emails/${encodeURIComponent(messageId)}/approve-send`, {
+    method: "POST",
+  });
+}
+
+export async function bulkApproveSend(messageIds: string[]): Promise<{ sent_count: number; failed: { message_id: string; error: string }[] }> {
+  return jsonFetch("/api/processed-emails/bulk-approve-send", {
+    method: "POST",
+    body: JSON.stringify({ message_ids: messageIds }),
+  });
+}
+
+export async function bulkSetStatus(messageIds: string[], status: string): Promise<{ count: number }> {
+  return jsonFetch("/api/processed-emails/bulk-status", {
+    method: "POST",
+    body: JSON.stringify({ message_ids: messageIds, status }),
+  });
+}
+
+export async function fetchPricing(): Promise<{ currency: string; unit: string; models: PricingModel[] }> {
+  return jsonFetch("/api/pricing");
+}
+
+export async function fetchAccounts(): Promise<EmailAccount[]> {
+  const r = await jsonFetch<{ items: EmailAccount[] }>("/api/accounts");
+  return r.items;
+}
+
+export async function addAccount(email: string, appPassword: string): Promise<EmailAccount> {
+  return jsonFetch<EmailAccount>("/api/accounts", {
+    method: "POST",
+    body: JSON.stringify({ email, app_password: appPassword }),
+  });
+}
+
+export async function activateAccount(id: string): Promise<EmailAccount[]> {
+  const r = await jsonFetch<{ items: EmailAccount[] }>(`/api/accounts/${encodeURIComponent(id)}/activate`, { method: "POST" });
+  return r.items;
+}
+
+export async function deleteAccount(id: string): Promise<EmailAccount[]> {
+  const r = await jsonFetch<{ items: EmailAccount[] }>(`/api/accounts/${encodeURIComponent(id)}`, { method: "DELETE" });
+  return r.items;
 }
 
 export function resumeDownloadHref(downloadUrl: string): string {

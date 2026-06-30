@@ -19,6 +19,11 @@ class EmailPipelineState(TypedDict):
     # -- Scan parameters (overridable from UI; fall back to config defaults) --
     scan_folders: List[str]        # e.g. ["INBOX", "UPDATES"]
     scan_hours: int                # lookback window in hours
+    scan_unread_only: bool         # True = only unread emails (default); False = include read
+    target_roles: List[str]        # only process emails matching these roles (empty = default AI/Cloud filter)
+
+    # -- Per-run Claude model (UI selection; falls back to CLAUDE_MODEL) --
+    selected_model: str
 
     # -- Scan tracking --
     recruiter_scan_done: bool

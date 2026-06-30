@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { AppConfig, UsageSnapshot } from "../types";
+import type { AppConfig, EmailAccount, UsageSnapshot } from "../types";
 import { UsagePanel } from "./UsagePanel";
 
 interface Props {
@@ -15,25 +15,23 @@ interface Props {
   selectedThreshold: number;
   onThresholdChange: (v: number) => void;
   onProcessEmails: () => void;
-  onOpenPasteJD: () => void;
-  onOpenApplyURL: () => void;
   selectedAutoApplyHours: number;
   onAutoApplyHoursChange: (v: number) => void;
   onAutoApply: () => void;
   selectedModel: string;
   onModelChange: (m: string) => void;
+  targetRoles: string;
+  onTargetRolesChange: (v: string) => void;
   onComparePricing: () => void;
-  onAddGmail: () => void;
+  accounts: EmailAccount[];
+  onActivateAccount: (id: string) => void;
+  onOpenAccounts: () => void;
 }
 
-const MODEL_OPTIONS = [
-  { id: "claude-sonnet-4-20250514",  label: "Claude Sonnet 4" },
-  { id: "claude-opus-4-20250514",    label: "Claude Opus 4" },
-  { id: "claude-haiku-3-5",          label: "Claude Haiku 3.5" },
-  { id: "openai-gpt-4o",             label: "OpenAI GPT-4o (preview)" },
-  { id: "openai-gpt-4o-mini",        label: "OpenAI GPT-4o-mini (preview)" },
-  { id: "gemini-1.5-pro",            label: "Gemini 1.5 Pro (preview)" },
-  { id: "gemini-1.5-flash",          label: "Gemini 1.5 Flash (preview)" },
+const FALLBACK_MODELS = [
+  { id: "claude-opus-4-8",   label: "Claude Opus 4.8" },
+  { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
+  { id: "claude-haiku-4-5",  label: "Claude Haiku 4.5" },
 ];
 
 export function DashboardHeader({
@@ -42,10 +40,12 @@ export function DashboardHeader({
   selectedHours, onHoursChange,
   selectedMaxIterations, onMaxIterationsChange,
   selectedThreshold, onThresholdChange,
-  onProcessEmails, onOpenPasteJD, onOpenApplyURL,
+  onProcessEmails,
   selectedAutoApplyHours, onAutoApplyHoursChange, onAutoApply,
   selectedModel, onModelChange,
-  onComparePricing, onAddGmail,
+  targetRoles, onTargetRolesChange,
+  onComparePricing,
+  accounts, onActivateAccount, onOpenAccounts,
 }: Props) {
   const [foldersOpen, setFoldersOpen] = useState(false);
   const folders = config?.available_folders ?? [];
@@ -53,6 +53,8 @@ export function DashboardHeader({
   const autoApplyDurations = config?.auto_apply_duration_options_hours ?? [24, 48, 72, 120];
   const iterOptions = config?.max_iteration_options ?? [1, 2, 3, 4, 5];
   const thresholdOptions = config?.threshold_options ?? [0.70, 0.75, 0.80, 0.85, 0.90];
+  const modelOptions = config?.model_options ?? FALLBACK_MODELS;
+  const activeAccount = accounts.find((a) => a.active) ?? accounts[0];
 
   const folderSummary = useMemo(() => {
     if (selectedFolders.length === 0) return "All defaults";
@@ -76,13 +78,29 @@ export function DashboardHeader({
       </div>
 
       <div className="dashboard-header__row dashboard-header__row--controls">
-        {/* Gmail account */}
+        {/* Connected email accounts */}
         <div className="ctrl">
-          <label className="ctrl__label">Gmail</label>
+          <label className="ctrl__label">Connected Email Accounts</label>
           <div className="ctrl__value">
-            <span className="pill">{config?.gmail_account ?? "—"}</span>
-            <button className="btn btn--ghost btn--tiny" onClick={onAddGmail} title="Add another Gmail account (coming soon)">
-              + Add
+            <select
+              className="select"
+              value={activeAccount?.id ?? ""}
+              onChange={(e) => onActivateAccount(e.target.value)}
+              disabled={running || accounts.length === 0}
+              title="Select the email account to use for scanning and sending"
+            >
+              {accounts.length === 0 ? (
+                <option value="">No account connected</option>
+              ) : (
+                accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.email}{a.env_default ? " (default)" : ""}
+                  </option>
+                ))
+              )}
+            </select>
+            <button className="btn btn--ghost btn--tiny" onClick={onOpenAccounts} title="Connect / manage email accounts">
+              Manage
             </button>
           </div>
         </div>
@@ -170,7 +188,7 @@ export function DashboardHeader({
               value={selectedModel}
               onChange={(e) => onModelChange(e.target.value)}
             >
-              {MODEL_OPTIONS.map((m) => (
+              {modelOptions.map((m) => (
                 <option key={m.id} value={m.id}>{m.label}</option>
               ))}
             </select>
@@ -180,14 +198,20 @@ export function DashboardHeader({
           </div>
         </div>
 
+        {/* Target roles */}
+        <div className="ctrl ctrl--grow" title="Only emails whose role matches these are processed">
+          <label className="ctrl__label">Target Roles (comma-separated)</label>
+          <input
+            className="select input--text"
+            type="text"
+            placeholder="e.g. AI Architect, AI Engineer, Cloud Architect"
+            value={targetRoles}
+            onChange={(e) => onTargetRolesChange(e.target.value)}
+          />
+        </div>
+
         <div className="dashboard-header__spacer" />
 
-        <button className="btn btn--ghost" onClick={onOpenApplyURL} disabled={running}>
-          Apply URL
-        </button>
-        <button className="btn btn--ghost" onClick={onOpenPasteJD} disabled={running}>
-          Paste JD
-        </button>
         <button className="btn btn--primary" onClick={onProcessEmails} disabled={running}>
           {running ? "Processing…" : "Process Job Emails"}
         </button>

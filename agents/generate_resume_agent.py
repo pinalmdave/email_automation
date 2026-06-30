@@ -19,6 +19,7 @@ from config import (
     RESUME_OUTPUT_DIR,
     RESUME_PROMPT_PATH,
     RESUME_TEMPLATE_PATH,
+    resolve_model,
 )
 from graph.state import EmailPipelineState
 from knowledge_base import system_prompt_with_knowledge
@@ -56,6 +57,7 @@ def _generate_resume_json(
     email_data: Dict[str, Any],
     prior_feedback: str = "",
     iteration: int = 1,
+    model: str = CLAUDE_MODEL,
 ) -> Dict[str, Any]:
     """Send recruiter email to Claude and get back structured resume JSON.
 
@@ -76,7 +78,7 @@ def _generate_resume_json(
             (prior_feedback[:140] + "…") if len(prior_feedback) > 140 else prior_feedback,
         )
 
-    llm = ChatAnthropic(model=CLAUDE_MODEL, max_tokens=4096)
+    llm = ChatAnthropic(model=model, max_tokens=4096)
     # The system prompt + knowledge base is static across calls — mark it
     # with ephemeral cache_control so Anthropic caches the full block and
     # subsequent calls within 5 minutes pay ~10% of normal input rate.
@@ -200,14 +202,15 @@ def generate_resume(state: EmailPipelineState) -> Dict[str, Any]:
     iterations = state.get("resume_iterations", 0)
     prior_feedback = state.get("resume_feedback", "") if iterations > 0 else ""
     next_iteration = iterations + 1
+    model = resolve_model(state.get("selected_model"))
 
     try:
         logger.info(
-            "  Calling Claude API for resume generation (iteration %d)%s...",
-            next_iteration,
+            "  Calling Claude API (%s) for resume generation (iteration %d)%s...",
+            model, next_iteration,
             " with evaluator feedback" if prior_feedback else "",
         )
-        resume_json = _generate_resume_json(email_data, prior_feedback, next_iteration)
+        resume_json = _generate_resume_json(email_data, prior_feedback, next_iteration, model=model)
         logger.info("  Rendering DOCX resume...")
         resume_path = _render_resume_docx(resume_json)
         return {

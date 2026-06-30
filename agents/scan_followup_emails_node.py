@@ -16,13 +16,12 @@ from config import (
     EXCLUDED_DOMAINS,
     FOLLOWUP_STATE_PATH,
     IMAP_HOST,
-    IMAP_PASSWORD,
     IMAP_PORT,
-    IMAP_USER,
     MAX_EMAIL_AGE_HOURS,
     SCAN_FOLDERS,
     STATE_FILE_PATH,
 )
+from email_accounts import get_active_credentials
 from graph.state import EmailPipelineState
 
 logger = logging.getLogger(__name__)
@@ -138,14 +137,15 @@ def _scan_for_followup_emails(
     scan_hours: int | None = None,
 ) -> List[Dict[str, Any]]:
     """Scan Gmail for reply emails from recruiters we previously contacted."""
-    if not IMAP_USER or not IMAP_PASSWORD:
-        raise RuntimeError("IMAP_USER and IMAP_PASSWORD must be set in .env")
+    imap_user, imap_password = get_active_credentials()
+    if not imap_user or not imap_password:
+        raise RuntimeError("No connected email account (set IMAP_USER/IMAP_PASSWORD or add an account)")
 
     folders_to_scan = tuple(scan_folders) if scan_folders else SCAN_FOLDERS
     hours_window = scan_hours if (scan_hours and scan_hours > 0) else MAX_EMAIL_AGE_HOURS
 
     mail = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT)
-    mail.login(IMAP_USER, IMAP_PASSWORD)
+    mail.login(imap_user, imap_password)
 
     since = (datetime.now(timezone.utc) - timedelta(hours=hours_window)).strftime("%d-%b-%Y")
     # UNSEEN = only unread emails. Follow-ups we've already replied to get
@@ -188,7 +188,7 @@ def _scan_for_followup_emails(
                     domain = _get_domain(from_email)
                     if not domain or domain in EXCLUDED_DOMAINS:
                         continue
-                    if IMAP_USER.lower() in from_email.lower():
+                    if imap_user.lower() in from_email.lower():
                         continue
 
                     try:
