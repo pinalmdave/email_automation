@@ -4,16 +4,36 @@ import {
   applyPlanDelete,
   applyPlanMarkApplied,
   fetchApplyPlans,
+  fetchProcessedEmails,
   resumeDownloadHref,
 } from "../api";
-import type { ApplyPlan, ApplyPlanStatus } from "../types";
+import type { ApplyPlan } from "../types";
 
 interface Props {
   reloadKey: number;
   onChange: () => void;
 }
 
-const STATUS_ORDER: ApplyPlanStatus[] = ["ready", "planning", "applied", "cancelled"];
+type RowStatus = "ready" | "planning" | "applied" | "cancelled";
+const STATUS_ORDER: RowStatus[] = ["ready", "planning", "applied", "cancelled"];
+
+// Unified row across two sources: URL apply-plans and SENT email applications.
+interface Row {
+  key: string;
+  status: RowStatus;
+  jobTitle: string;
+  sub: string;
+  source: string;
+  created: string;
+  resumeFilename: string;
+  resumeUrl: string;
+  jobUrl: string;
+  kind: "plan" | "email";
+  plan?: ApplyPlan;
+  score?: number;
+  recommendation?: string;
+  declineReason?: string;
+}
 
 function formatDate(iso: string): string {
   if (!iso) return "";
@@ -24,18 +44,53 @@ function hostOf(url: string): string {
   try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; }
 }
 
+function domainOf(from: string): string {
+  const m = from.match(/@([\w.-]+)/);
+  return m ? m[1] : from;
+}
+
 export function ApplyHistory({ reloadKey, onChange }: Props) {
-  const [items, setItems] = useState<ApplyPlan[]>([]);
+  const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<ApplyPlanStatus | "all">("all");
+  const [statusFilter, setStatusFilter] = useState<RowStatus | "all">("all");
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const reload = () => {
     setLoading(true);
-    fetchApplyPlans("all")
-      .then((data) => {
-        setItems(data);
+    Promise.all([fetchApplyPlans("all"), fetchProcessedEmails("sent")])
+      .then(([plans, sent]) => {
+        const planRows: Row[] = plans.map((p) => ({
+          key: `plan-${p.id}`,
+          status: (p.status as RowStatus),
+          jobTitle: p.job_title || "(title unknown)",
+          sub: [p.company_name, p.staffing_company_name, p.target_role_title].filter(Boolean).join(" · "),
+          source: p.source || hostOf(p.job_url),
+          created: p.created_at,
+          resumeFilename: p.resume_filename,
+          resumeUrl: p.resume_filename ? `/api/resume/${p.resume_filename}` : "",
+          jobUrl: p.job_url,
+          kind: "plan",
+          plan: p,
+          score: p.evaluation_score,
+          recommendation: p.recommendation,
+          declineReason: p.decline_reason,
+        }));
+        // Sent email applications count as "applied".
+        const emailRows: Row[] = sent.map((e) => ({
+          key: `email-${e.message_id}`,
+          status: "applied" as RowStatus,
+          jobTitle: e.subject || "(no subject)",
+          sub: e.from_email,
+          source: domainOf(e.from_email) || "Email",
+          created: e.processed_at,
+          resumeFilename: e.resume_filename,
+          resumeUrl: e.resume_download_url,
+          jobUrl: "",
+          kind: "email",
+        }));
+        const all = [...planRows, ...emailRows].sort((a, b) => (a.created < b.created ? 1 : -1));
+        setRows(all);
         setError(null);
       })
       .catch((e: Error) => setError(e.message ?? String(e)))
@@ -48,7 +103,7 @@ export function ApplyHistory({ reloadKey, onChange }: Props) {
     setBusyId(id);
     try {
       await fn();
-      await fetchApplyPlans("all").then(setItems);
+      reload();
       onChange();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -60,24 +115,24 @@ export function ApplyHistory({ reloadKey, onChange }: Props) {
   if (loading) return <div className="pane pane--loading">Loading apply history…</div>;
   if (error)   return <div className="pane pane--error">Error: {error}</div>;
 
-  const filtered = statusFilter === "all" ? items : items.filter((i) => i.status === statusFilter);
-
-  if (items.length === 0) {
+  if (rows.length === 0) {
     return (
       <div className="pane pane--empty">
-        <h3>No job applications yet</h3>
-        <p>Paste a job posting URL in <b>Chat / Apply URL</b> to start a tailored application plan.</p>
+        <h3>No applications yet</h3>
+        <p>Use <b>Auto-Apply</b> / <b>Approve &amp; Send</b>, or paste a job URL in <b>Apply from URL</b>.</p>
       </div>
     );
   }
 
-  const counts: Record<string, number> = { all: items.length };
-  STATUS_ORDER.forEach((s) => { counts[s] = items.filter((i) => i.status === s).length; });
+  const counts: Record<string, number> = { all: rows.length };
+  STATUS_ORDER.forEach((s) => { counts[s] = rows.filter((r) => r.status === s).length; });
+  const filtered = statusFilter === "all" ? rows : rows.filter((r) => r.status === statusFilter);
 
   return (
     <div className="pane">
       <div className="pane__header">
         <h2 className="pane__title">Apply History</h2>
+        <div className="pane__meta">{rows.length} total · {counts["applied"] ?? 0} applied</div>
         <div className="pane__filters">
           {(["all", ...STATUS_ORDER] as const).map((s) => (
             <button
@@ -97,86 +152,63 @@ export function ApplyHistory({ reloadKey, onChange }: Props) {
             <th>Status</th>
             <th>Job</th>
             <th>Source</th>
-            <th>Created</th>
+            <th>Applied / Created</th>
             <th>Resume</th>
             <th>Actions</th>
           </tr>
         </thead>
         <tbody>
-          {filtered.map((p) => (
-            <tr key={p.id} className={p.recommendation === "decline" ? "tbl__row--warn" : ""}>
+          {filtered.map((r) => (
+            <tr key={r.key} className={r.recommendation === "decline" ? "tbl__row--warn" : ""}>
               <td>
-                <span className={`tag tag--${p.status}`}>{p.status}</span>
-                {p.recommendation === "decline" ? (
-                  <div className="tag tag--decline" title={p.decline_reason}>⚠ poor fit</div>
-                ) : null}
-                {typeof p.evaluation_score === "number" && p.evaluation_score > 0 ? (
-                  <div className="tbl__muted" style={{ fontSize: 11, marginTop: 2 }}>
-                    score {p.evaluation_score.toFixed(2)}
-                  </div>
+                <span className={`tag tag--${r.status}`}>{r.status}</span>
+                {r.kind === "email" ? <div className="tbl__muted" style={{ fontSize: 11, marginTop: 2 }}>via email</div> : null}
+                {typeof r.score === "number" && r.score > 0 ? (
+                  <div className="tbl__muted" style={{ fontSize: 11, marginTop: 2 }}>score {r.score.toFixed(2)}</div>
                 ) : null}
               </td>
               <td>
-                <div className="tbl__subject" title={p.job_title}>
-                  <a className="link" href={p.job_url} target="_blank" rel="noreferrer">
-                    {p.job_title || "(title unknown)"}
-                  </a>
+                <div className="tbl__subject" title={r.jobTitle}>
+                  {r.jobUrl ? (
+                    <a className="link" href={r.jobUrl} target="_blank" rel="noreferrer">{r.jobTitle}</a>
+                  ) : r.jobTitle}
                 </div>
-                <div className="tbl__muted">
-                  {[p.company_name, p.staffing_company_name, p.target_role_title].filter(Boolean).join(" · ")}
-                </div>
-                {p.recommendation === "decline" && p.decline_reason ? (
-                  <div className="tbl__warn-reason">⚠ {p.decline_reason}</div>
+                <div className="tbl__muted">{r.sub}</div>
+                {r.recommendation === "decline" && r.declineReason ? (
+                  <div className="tbl__warn-reason">⚠ {r.declineReason}</div>
                 ) : null}
               </td>
-              <td><span className="pill pill--small">{p.source || hostOf(p.job_url)}</span></td>
-              <td className="tbl__date">{formatDate(p.created_at)}</td>
+              <td><span className="pill pill--small">{r.source}</span></td>
+              <td className="tbl__date">{formatDate(r.created)}</td>
               <td>
-                {p.resume_filename ? (
-                  <a
-                    className="link link--download"
-                    href={resumeDownloadHref(`/api/resume/${p.resume_filename}`)}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {p.resume_filename}
+                {r.resumeFilename ? (
+                  <a className="link link--download" href={resumeDownloadHref(r.resumeUrl)} target="_blank" rel="noreferrer">
+                    {r.resumeFilename}
                   </a>
-                ) : (
-                  <span className="tbl__muted">—</span>
-                )}
+                ) : <span className="tbl__muted">—</span>}
               </td>
               <td className="tbl__actions">
-                {p.status === "ready" ? (
+                {r.kind === "plan" && r.plan ? (
                   <>
-                    <a className="btn btn--tiny" href={p.job_url} target="_blank" rel="noreferrer">Open posting</a>
-                    <button
-                      className="btn btn--tiny btn--send"
-                      onClick={() => act(p.id, () => applyPlanMarkApplied(p.id))}
-                      disabled={busyId === p.id}
-                      title="Mark as applied once you've submitted on the job site"
-                    >
-                      Mark applied
-                    </button>
+                    {r.status === "ready" ? (
+                      <>
+                        <a className="btn btn--tiny" href={r.jobUrl} target="_blank" rel="noreferrer">Open posting</a>
+                        <button className="btn btn--tiny btn--send" disabled={busyId === r.key}
+                          onClick={() => act(r.key, () => applyPlanMarkApplied(r.plan!.id))}>Mark applied</button>
+                      </>
+                    ) : null}
+                    {r.status !== "cancelled" && r.status !== "applied" ? (
+                      <button className="btn btn--tiny btn--ghost" disabled={busyId === r.key}
+                        onClick={() => act(r.key, () => applyPlanCancel(r.plan!.id))}>Cancel</button>
+                    ) : null}
+                    {r.status === "cancelled" ? (
+                      <button className="btn btn--tiny btn--ghost" disabled={busyId === r.key}
+                        onClick={() => act(r.key, () => applyPlanDelete(r.plan!.id))}>Delete</button>
+                    ) : null}
                   </>
-                ) : null}
-                {p.status !== "cancelled" && p.status !== "applied" ? (
-                  <button
-                    className="btn btn--tiny btn--ghost"
-                    onClick={() => act(p.id, () => applyPlanCancel(p.id))}
-                    disabled={busyId === p.id}
-                  >
-                    Cancel
-                  </button>
-                ) : null}
-                {p.status === "cancelled" ? (
-                  <button
-                    className="btn btn--tiny btn--ghost"
-                    onClick={() => act(p.id, () => applyPlanDelete(p.id))}
-                    disabled={busyId === p.id}
-                  >
-                    Delete
-                  </button>
-                ) : null}
+                ) : (
+                  <span className="tbl__muted">Sent</span>
+                )}
               </td>
             </tr>
           ))}

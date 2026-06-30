@@ -29,6 +29,7 @@ export default function App() {
   const [accounts, setAccounts] = useState<EmailAccount[]>([]);
   const [pricingOpen, setPricingOpen] = useState(false);
   const [accountsOpen, setAccountsOpen] = useState(false);
+  const [navCollapsed, setNavCollapsed] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [newEmailCount, setNewEmailCount] = useState(0);
   const [archivedCount, setArchivedCount] = useState(0);
@@ -121,7 +122,7 @@ export default function App() {
   };
 
   return (
-    <div className="app">
+    <div className={`app ${navCollapsed ? "app--nav-collapsed" : ""}`}>
       <Sidebar
         active={tab}
         onChange={setTab}
@@ -129,33 +130,37 @@ export default function App() {
         archivedCount={archivedCount}
         pendingCount={pendingCount}
         applyReadyCount={applyReadyCount}
+        collapsed={navCollapsed}
+        onToggleCollapse={() => setNavCollapsed((v) => !v)}
       />
       <div className="app__main">
-        <DashboardHeader
-          config={config}
-          usage={pipeline.usage ?? initialUsage}
-          running={pipeline.running}
-          selectedFolders={selectedFolders}
-          onFoldersChange={setSelectedFolders}
-          selectedHours={selectedHours}
-          onHoursChange={setSelectedHours}
-          selectedMaxIterations={selectedMaxIterations}
-          onMaxIterationsChange={setSelectedMaxIterations}
-          selectedThreshold={selectedThreshold}
-          onThresholdChange={setSelectedThreshold}
-          selectedModel={selectedModel}
-          onModelChange={setSelectedModel}
-          targetRoles={targetRoles}
-          onTargetRolesChange={setTargetRoles}
-          onProcessEmails={handleProcessEmails}
-          selectedAutoApplyHours={selectedAutoApplyHours}
-          onAutoApplyHoursChange={setSelectedAutoApplyHours}
-          onAutoApply={handleAutoApply}
-          onComparePricing={() => setPricingOpen(true)}
-          accounts={accounts}
-          onActivateAccount={handleActivateAccount}
-          onOpenAccounts={() => setAccountsOpen(true)}
-        />
+        {tab === "dashboard" ? (
+          <DashboardHeader
+            config={config}
+            usage={pipeline.usage ?? initialUsage}
+            running={pipeline.running}
+            selectedFolders={selectedFolders}
+            onFoldersChange={setSelectedFolders}
+            selectedHours={selectedHours}
+            onHoursChange={setSelectedHours}
+            selectedMaxIterations={selectedMaxIterations}
+            onMaxIterationsChange={setSelectedMaxIterations}
+            selectedThreshold={selectedThreshold}
+            onThresholdChange={setSelectedThreshold}
+            selectedModel={selectedModel}
+            onModelChange={setSelectedModel}
+            targetRoles={targetRoles}
+            onTargetRolesChange={setTargetRoles}
+            onProcessEmails={handleProcessEmails}
+            selectedAutoApplyHours={selectedAutoApplyHours}
+            onAutoApplyHoursChange={setSelectedAutoApplyHours}
+            onAutoApply={handleAutoApply}
+            onComparePricing={() => setPricingOpen(true)}
+            accounts={accounts}
+            onActivateAccount={handleActivateAccount}
+            onOpenAccounts={() => setAccountsOpen(true)}
+          />
+        ) : null}
 
         <div className="app__content">
           {tab === "dashboard" ? (

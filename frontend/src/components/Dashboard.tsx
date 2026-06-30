@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { fetchApplyPlans, fetchConversations, fetchProcessedEmails } from "../api";
 import type { ApplyPlan, Conversation, ProcessedEmail, UsageSnapshot } from "../types";
 import type { TabKey } from "./Sidebar";
@@ -25,12 +25,31 @@ export function Dashboard({ usage, reloadKey, lastError, lastSummary, onNavigate
   const [newEmails, setNewEmails] = useState<ProcessedEmail[]>([]);
   const [pending, setPending] = useState<Conversation[]>([]);
   const [readyPlans, setReadyPlans] = useState<ApplyPlan[]>([]);
+  const [topHeight, setTopHeight] = useState<number>(230);
+  const dragRef = useRef<{ startY: number; startH: number } | null>(null);
 
   useEffect(() => {
     fetchProcessedEmails("new").then(setNewEmails).catch(() => {});
     fetchConversations("pending").then(setPending).catch(() => {});
     fetchApplyPlans("ready").then(setReadyPlans).catch(() => {});
   }, [reloadKey]);
+
+  const onDragStart = (e: ReactMouseEvent) => {
+    e.preventDefault();
+    dragRef.current = { startY: e.clientY, startH: topHeight };
+    window.addEventListener("mousemove", onDragging);
+    window.addEventListener("mouseup", onDragEnd);
+  };
+  const onDragging = (e: MouseEvent) => {
+    const d = dragRef.current;
+    if (!d) return;
+    setTopHeight(Math.max(120, Math.min(560, d.startH + (e.clientY - d.startY))));
+  };
+  const onDragEnd = () => {
+    dragRef.current = null;
+    window.removeEventListener("mousemove", onDragging);
+    window.removeEventListener("mouseup", onDragEnd);
+  };
 
   const cards = [
     { key: "tracker" as TabKey, label: "Applications to review", value: newEmails.length, hint: "New, awaiting Approve & Send", tone: "blue" },
@@ -39,11 +58,11 @@ export function Dashboard({ usage, reloadKey, lastError, lastSummary, onNavigate
   ];
 
   const actionItems = [
-    ...newEmails.slice(0, 6).map((e) => ({
+    ...newEmails.slice(0, 30).map((e) => ({
       id: `e-${e.message_id}`, kind: "Application", title: e.subject || "(no subject)",
       sub: e.from_email, when: e.processed_at, tab: "tracker" as TabKey,
     })),
-    ...pending.slice(0, 4).map((c) => ({
+    ...pending.slice(0, 20).map((c) => ({
       id: `c-${c.id}`, kind: "Reply", title: c.reply?.subject || c.original?.subject || "(reply)",
       sub: c.original?.from_email || "", when: c.updated_at, tab: "conversations" as TabKey,
     })),
@@ -51,34 +70,34 @@ export function Dashboard({ usage, reloadKey, lastError, lastSummary, onNavigate
 
   return (
     <div className="dash">
-      <div className="dash__cards">
-        {cards.map((c) => (
-          <button key={c.key} className={`dash-card dash-card--${c.tone}`} onClick={() => onNavigate(c.key)}>
-            <div className="dash-card__value">{c.value}</div>
-            <div className="dash-card__label">{c.label}</div>
-            <div className="dash-card__hint">{c.hint}</div>
-          </button>
-        ))}
-        <div className="dash-card dash-card--muted">
-          <div className="dash-card__value">{fmtCost(usage?.total?.cost_usd ?? 0)}</div>
-          <div className="dash-card__label">All-time Claude spend</div>
-          <div className="dash-card__hint">
-            {(usage?.total?.total_tokens ?? 0).toLocaleString()} tokens · {usage?.total?.api_calls ?? 0} calls
+      <div className="dash__top" style={{ height: topHeight }}>
+        <div className="dash__cards">
+          {cards.map((c) => (
+            <button key={c.key} className={`dash-card dash-card--${c.tone}`} onClick={() => onNavigate(c.key)}>
+              <div className="dash-card__value">{c.value}</div>
+              <div className="dash-card__label">{c.label}</div>
+              <div className="dash-card__hint">{c.hint}</div>
+            </button>
+          ))}
+          <div className="dash-card dash-card--muted">
+            <div className="dash-card__value">{fmtCost(usage?.total?.cost_usd ?? 0)}</div>
+            <div className="dash-card__label">All-time Claude spend</div>
+            <div className="dash-card__hint">
+              {(usage?.total?.total_tokens ?? 0).toLocaleString()} tokens · {usage?.total?.api_calls ?? 0} calls
+            </div>
           </div>
         </div>
+
+        {lastError ? (
+          <div className="dash-alert dash-alert--error"><b>Last run error:</b> {lastError}</div>
+        ) : lastSummary ? (
+          <div className="dash-alert dash-alert--ok"><b>Last run:</b> {lastSummary}</div>
+        ) : null}
       </div>
 
-      {lastError ? (
-        <div className="dash-alert dash-alert--error">
-          <b>Last run error:</b> {lastError}
-        </div>
-      ) : lastSummary ? (
-        <div className="dash-alert dash-alert--ok">
-          <b>Last run:</b> {lastSummary}
-        </div>
-      ) : null}
+      <div className="dash__divider" onMouseDown={onDragStart} title="Drag to resize" />
 
-      <div className="dash__section">
+      <div className="dash__bottom">
         <div className="dash__section-head">
           <h2 className="pane__title">Needs your response</h2>
           <span className="pane__meta">{actionItems.length} item{actionItems.length === 1 ? "" : "s"}</span>

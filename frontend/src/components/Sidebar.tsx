@@ -14,6 +14,8 @@ interface Props {
   archivedCount: number;
   pendingCount: number;
   applyReadyCount: number;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
 }
 
 const TABS: { key: TabKey; label: string; icon: string }[] = [
@@ -26,10 +28,15 @@ const TABS: { key: TabKey; label: string; icon: string }[] = [
   { key: "archived",      label: "Archived",            icon: "🗄" },
 ];
 
-export function Sidebar({ active, onChange, newEmailCount, archivedCount, pendingCount, applyReadyCount }: Props) {
+export function Sidebar({ active, onChange, newEmailCount, archivedCount, pendingCount, applyReadyCount, collapsed, onToggleCollapse }: Props) {
   return (
-    <nav className="sidebar">
-      <div className="sidebar__brand">Smart Email</div>
+    <nav className={`sidebar ${collapsed ? "sidebar--collapsed" : ""}`}>
+      <div className="sidebar__brand">
+        <button className="sidebar__toggle" onClick={onToggleCollapse} title={collapsed ? "Expand" : "Collapse"} aria-label="Toggle navigation">
+          ☰
+        </button>
+        <span className="sidebar__brand-text">Smart Email</span>
+      </div>
       <ul className="sidebar__list">
         {TABS.map((t) => {
           const badge =
@@ -44,6 +51,7 @@ export function Sidebar({ active, onChange, newEmailCount, archivedCount, pendin
               <button
                 className={`sidebar__item ${isActive ? "sidebar__item--active" : ""}`}
                 onClick={() => onChange(t.key)}
+                title={collapsed ? t.label : undefined}
               >
                 <span className="sidebar__icon" aria-hidden>{t.icon}</span>
                 <span className="sidebar__label">{t.label}</span>
